@@ -102,6 +102,14 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractiveModu
 
     public DeskPetServiceConfig? Configuration { get; set; }
 
+    public event Action<PetLayout>? LayoutChanged;
+
+    public void SetLayout(PetLayout layout) => client!.SetLayout(layout);
+
+    public void SetClickThrough(bool enabled) => client!.SetClickThrough(enabled);
+
+    public Task<PetLayout> GetLayoutAsync() => client!.GetLayoutAsync();
+
     PetServer? client;
     long lastBubbleEndTime;
 
@@ -121,6 +129,7 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractiveModu
         if (string.IsNullOrWhiteSpace(modelName))
             modelName = "Mao";
         client = new PetServer(clientPath, modelName);
+        client.LayoutChanged += layout => LayoutChanged?.Invoke(layout);
         string supportedExpressionsDescription = string.Join(", ", client.SupportedExpressions);
         if (string.IsNullOrEmpty(supportedExpressionsDescription)) supportedExpressionsDescription = $"当前不支持<{nameof(Expression)}>功能";
         string supportedMotionsDescription = string.Join(", ", client.SupportedMotions.Keys);

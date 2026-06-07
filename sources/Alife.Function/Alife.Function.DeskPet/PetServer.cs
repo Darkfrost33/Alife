@@ -16,6 +16,7 @@ public class PetServer : IAsyncDisposable
 {
     public event Action<string>? OnInput;
     public event Action<string>? OnInteracted;
+    public event Action<PetLayout>? LayoutChanged;
 
     public IEnumerable<string> SupportedExpressions => metadata.Expressions;
     public IDictionary<string, (string Group, int Index)> SupportedMotions => metadata.Motions;
@@ -109,9 +110,37 @@ public class PetServer : IAsyncDisposable
         throw new TimeoutException("获取桌宠位置超时");
     }
 
+    public void SetLayout(PetLayout layout)
+    {
+        petProcess.SendInput(new SetLayoutCommand(layout.Left, layout.Top, layout.Width, layout.Height));
+    }
+
+    public void SetClickThrough(bool enabled)
+    {
+        petProcess.SendInput(new SetClickThroughCommand(enabled));
+    }
+
+    public async Task<PetLayout> GetLayoutAsync()
+    {
+        layoutTask = new TaskCompletionSource<PetLayout>(TaskCreationOptions.RunContinuationsAsynchronously);
+        petProcess.SendInput(new GetLayoutCommand());
+
+        Task completedTask = await Task.WhenAny(layoutTask.Task, Task.Delay(2000));
+        if (completedTask == layoutTask.Task)
+        {
+            PetLayout result = await layoutTask.Task;
+            layoutTask = null;
+            return result;
+        }
+
+        layoutTask = null;
+        throw new TimeoutException("获取桌宠布局超时");
+    }
+
     public void ResetInteractions()
     {
         positionTask?.TrySetCanceled();
+        layoutTask?.TrySetCanceled();
     }
 
     readonly Process nativeProcess;
@@ -119,6 +148,7 @@ public class PetServer : IAsyncDisposable
     readonly PetModelMetadata metadata;
     readonly TaskCompletionSource readyTask = new();
     TaskCompletionSource<(double, double)>? positionTask;
+    TaskCompletionSource<PetLayout>? layoutTask;
 
     void OnEventReceived(IpcEvent ev)
     {
@@ -128,6 +158,13 @@ public class PetServer : IAsyncDisposable
             case InputEvent input: OnInput?.Invoke(input.Text); break;
             case InteractionEvent interaction: OnInteracted?.Invoke(interaction.Interaction); break;
             case PositionEvent position: positionTask?.TrySetResult((position.X, position.Y)); break;
+            case LayoutEvent layout:
+            {
+                PetLayout petLayout = new(layout.Left, layout.Top, layout.Width, layout.Height);
+                layoutTask?.TrySetResult(petLayout);
+                LayoutChanged?.Invoke(petLayout);
+                break;
+            }
         }
     }
 }

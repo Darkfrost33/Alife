@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/Plugins/">
+    <Project Path="Plugins/Alife.Function.DeskPet.Layout/Alife.Function.DeskPet.Layout.csproj" />
+  </Folder>
   <Folder Name="/Demos/">
     <Project Path="Demos/Alife.Demo.DeskPet/Alife.Demo.DeskPet.csproj" />
     <Project Path="Demos/Alife.Demo.Framework/Alife.Demo.Framework.csproj" />

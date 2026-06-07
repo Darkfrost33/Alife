@@ -96,6 +96,9 @@ public class PetProcess : IDisposable
 // --- IPC Protocol ---
 [JsonDerivedType(typeof(WindowMoveCommand), "window-move")]
 [JsonDerivedType(typeof(GetPositionCommand), "get-position")]
+[JsonDerivedType(typeof(GetLayoutCommand), "get-layout")]
+[JsonDerivedType(typeof(SetLayoutCommand), "set-layout")]
+[JsonDerivedType(typeof(SetClickThroughCommand), "set-click-through")]
 [JsonDerivedType(typeof(BubbleCommand), "bubble")]
 [JsonDerivedType(typeof(PlayExpressionCommand), "expression")]
 [JsonDerivedType(typeof(MotionCommand), "motion")]
@@ -106,6 +109,12 @@ public abstract record IpcCommand;
 public record WindowMoveCommand(double X, double Y, int Duration) : IpcCommand;
 
 public record GetPositionCommand : IpcCommand;
+
+public record GetLayoutCommand : IpcCommand;
+
+public record SetLayoutCommand(double Left, double Top, double Width, double Height) : IpcCommand;
+
+public record SetClickThroughCommand(bool Enabled) : IpcCommand;
 
 public record BubbleCommand(string Text) : IpcCommand;
 
@@ -121,6 +130,7 @@ public record StatusCommand(bool Working) : IpcCommand;
 [JsonDerivedType(typeof(InputEvent), "input")]
 [JsonDerivedType(typeof(InteractionEvent), "interaction")]
 [JsonDerivedType(typeof(PositionEvent), "position")]
+[JsonDerivedType(typeof(LayoutEvent), "layout")]
 public abstract record IpcEvent;
 
 public record ReadyEvent : IpcEvent;
@@ -130,3 +140,7 @@ public record InputEvent(string Text) : IpcEvent;
 public record InteractionEvent(string Interaction) : IpcEvent;
 
 public record PositionEvent(double X, double Y) : IpcEvent;
+
+public record LayoutEvent(double Left, double Top, double Width, double Height) : IpcEvent;
+
+public record PetLayout(double Left, double Top, double Width, double Height);

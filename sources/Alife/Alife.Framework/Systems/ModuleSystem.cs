@@ -254,8 +254,9 @@ public class ModuleSystem
         moduleFolder = storageSystem.GetObject(moduleSystemConfig, new StringFolder("全部模块"))!;
 
         defaultAssemblies = AssemblyLoadContext.Default.Assemblies.Select(assembly => assembly.FullName).ToHashSet()!;
-        alifeAssemblies = AppDomain.CurrentDomain.GetAssemblies().Where(assembly => assembly.GetName().Name?.StartsWith("Alife") ?? false).ToArray();
         LoadAssemblyChain(Assembly.GetEntryAssembly()!);//加载所有本地自带的程序，方便后续判断
+        LoadAlifeDllsFromBaseDirectory();
+        alifeAssemblies = AppDomain.CurrentDomain.GetAssemblies().Where(assembly => assembly.GetName().Name?.StartsWith("Alife") ?? false).ToArray();
 
         void LoadAssemblyChain(Assembly entryAssembly)
         {
@@ -282,6 +283,30 @@ public class ModuleSystem
                             // 忽略加载失败的程序集（有些可能是环境相关的）
                         }
                     }
+                }
+            }
+        }
+
+        void LoadAlifeDllsFromBaseDirectory()
+        {
+            var loadedNames = AppDomain.CurrentDomain.GetAssemblies()
+                .Select(assembly => assembly.GetName().Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string file in Directory.GetFiles(AppDomain.CurrentDomain.BaseDirectory, "Alife*.dll"))
+            {
+                try
+                {
+                    string? name = AssemblyName.GetAssemblyName(file).Name;
+                    if (name == null || loadedNames.Contains(name))
+                        continue;
+
+                    Assembly.LoadFrom(file);
+                    loadedNames.Add(name);
+                }
+                catch
+                {
+                    // ignored
                 }
             }
         }
@@ -318,7 +343,7 @@ public class ModuleSystem
                 if (type.IsInterface)
                     continue;
 
-                moduleTypes.Add(GetModuleID(type), type);
+                moduleTypes[GetModuleID(type)] = type;
             }
         }
 

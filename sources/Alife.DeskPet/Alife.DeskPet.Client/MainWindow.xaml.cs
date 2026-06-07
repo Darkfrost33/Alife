@@ -1,8 +1,11 @@
 using System;
 using System.IO;
 using System.Numerics;
+using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using Microsoft.Web.WebView2.Core;
@@ -15,6 +18,8 @@ namespace Alife.DeskPet;
 /// </summary>
 public partial class MainWindow
 {
+    public event Action? LayoutChanged;
+
     public static async Task<MainWindow> Create()
     {
         MainWindow mainWindow = new MainWindow();
@@ -25,6 +30,9 @@ public partial class MainWindow
         mainWindow.StateChanged += (_, _) => {
             if (mainWindow.WindowState == WindowState.Maximized) mainWindow.WindowState = WindowState.Normal;
         };
+
+        mainWindow.LocationChanged += (_, _) => mainWindow.ScheduleLayoutChanged();
+        mainWindow.SizeChanged += (_, _) => mainWindow.ScheduleLayoutChanged();
 
         WebView2 webView = mainWindow.WebView;
         await webView.EnsureCoreWebView2Async();
@@ -70,6 +78,20 @@ public partial class MainWindow
         (double ScaleX, double ScaleY) dpi = GetDpi();
         return ((layout.Left + layout.Width / 2) * dpi.ScaleX, (layout.Top + layout.Height / 2) * dpi.ScaleY);
     }
+    public void ApplyLayout(double left, double top, double width, double height)
+    {
+        suppressLayoutChanged = true;
+        Left = left;
+        Top = top;
+        Width = width;
+        Height = height;
+        suppressLayoutChanged = false;
+    }
+    public void SetClickThrough(bool enabled)
+    {
+        clickThroughEnabled = enabled;
+        ApplyClickThroughStyle();
+    }
     public void ProgrammaticMove(double offsetX, double offsetY, int durationMs)
     {
         (double ScaleX, double ScaleY) dpi = GetDpi();
@@ -97,5 +119,43 @@ public partial class MainWindow
         // 默认桌宠位置
         Left = SystemParameters.WorkArea.Width - Width + Width * -1f;
         Top = SystemParameters.WorkArea.Height - Height + Height * 0.5f;
+        ApplyClickThroughStyle();
     }
+
+    void ScheduleLayoutChanged()
+    {
+        if (suppressLayoutChanged)
+            return;
+
+        layoutChangedTimer?.Dispose();
+        layoutChangedTimer = new Timer(_ => {
+            Dispatcher.Invoke(() => LayoutChanged?.Invoke());
+        }, null, 300, Timeout.Infinite);
+    }
+
+    void ApplyClickThroughStyle()
+    {
+        IntPtr hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero)
+            return;
+
+        int style = GetWindowLong(hwnd, GwlExStyle);
+        if (clickThroughEnabled)
+            SetWindowLong(hwnd, GwlExStyle, style | WsExTransparent);
+        else
+            SetWindowLong(hwnd, GwlExStyle, style & ~WsExTransparent);
+    }
+
+    const int GwlExStyle = -20;
+    const int WsExTransparent = 0x20;
+
+    [DllImport("user32.dll")]
+    static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll")]
+    static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    bool suppressLayoutChanged;
+    bool clickThroughEnabled;
+    Timer? layoutChangedTimer;
 }

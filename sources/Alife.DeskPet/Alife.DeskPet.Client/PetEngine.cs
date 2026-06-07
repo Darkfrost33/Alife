@@ -109,6 +109,10 @@ public class PetEngine : IAsyncDisposable
         // 实例化引擎
         PetEngine engine = new(window, bridge, process, metadata, provider, modules, cancellationTokenSource);
 
+        // 布局变更上报（拖拽结束 / 窗口移动缩放）
+        window.LayoutChanged += () => ReportLayout(window, process);
+        provider.GetRequiredService<DragModule>().DragEnded += () => ReportLayout(window, process);
+
         // 启动交互（模块在构造函数中已自动初始化）
         engine.HandleInteraction("startup");
 
@@ -256,12 +260,33 @@ public class PetEngine : IAsyncDisposable
             process.SendOutput(new PositionEvent(center.X, center.Y));
             return;
         }
+        if (cmd is GetLayoutCommand)
+        {
+            ReportLayout(window, process);
+            return;
+        }
+        if (cmd is SetLayoutCommand setLayout)
+        {
+            window.ApplyLayout(setLayout.Left, setLayout.Top, setLayout.Width, setLayout.Height);
+            return;
+        }
+        if (cmd is SetClickThroughCommand clickThrough)
+        {
+            window.SetClickThrough(clickThrough.Enabled);
+            return;
+        }
 
         // 转发给模块
         foreach (IPetModule module in modules)
         {
             if (module.HandleIpc(cmd)) return;
         }
+    }
+
+    static void ReportLayout(MainWindow window, PetProcess process)
+    {
+        (double Left, double Top, double Width, double Height) layout = window.GetLayout();
+        process.SendOutput(new LayoutEvent(layout.Left, layout.Top, layout.Width, layout.Height));
     }
 
     void HandleInteraction(string type)
