@@ -11,6 +11,8 @@
     <!-- 打包目录 -->
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <!-- 命令行 dotnet build 不传 -c 时，此处 $(Configuration) 尚未被赋默认值，需补上，否则产物会落到 Outputs\ 根下的另一份目录 -->
+    <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
     <OutputPath>$(MSBuildThisFileDirectory)Outputs\$(Configuration)\$(MSBuildProjectName)\</OutputPath>
     <OutDir>$(OutputPath)</OutDir>
     <!-- C#功能 -->
