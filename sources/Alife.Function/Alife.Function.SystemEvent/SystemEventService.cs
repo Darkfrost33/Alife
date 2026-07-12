@@ -37,6 +37,12 @@ public class SystemEventService(XmlFunctionCaller functionService)
         (timeTask[1].Item1, "")
     ];//暴露给UI的数据
 
+    /// <summary>
+    /// 周期报点的额外门控，供其他模块注入环境判断：返回 false 时本次报点推迟重试。
+    /// 例如聊天室模块以此避免报点打断其他角色的发言顺序。
+    /// </summary>
+    public Func<bool>? ProactivePokeGate { get; set; }
+
     [XmlFunction(FunctionMode.OneShot)]
     [Description("让自己等待几秒再继续（通常仅用于主动追问或等待外部进程，因为内部工具通常支持回调，所以不需要使用）")]
     public async Task Await(int second)
@@ -110,7 +116,11 @@ public class SystemEventService(XmlFunctionCaller functionService)
 
     public override async Task DestroyAsync()
     {
-        await ChatAsync($"程序关闭中。{Configuration!.DestroyPrompt}");
+        //告别对话需要排队获取对话信号量，若前面的回复卡死（如语音合成挂起）会永远排不上。
+        //限时等待兜底，超时则放弃告别，保证关闭流程一定能继续。
+        Task farewell = ChatAsync($"程序关闭中。{Configuration!.DestroyPrompt}");
+        await Task.WhenAny(farewell, Task.Delay(TimeSpan.FromSeconds(30)));
+        _ = farewell.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
 
         await base.DestroyAsync();
     }
@@ -148,8 +158,8 @@ public class SystemEventService(XmlFunctionCaller functionService)
 
         timeTask[0].Item1 = DateTime.Now.AddSeconds(currentInterval);
         timeTask[0].Item2 = () => {
-            if (functionService.IsIdle == false)
-                NextTimer();//发生碰撞，重新尝试
+            if (functionService.IsIdle == false || ProactivePokeGate?.Invoke() == false)
+                NextTimer();//发生碰撞或环境不允许，重新尝试
             else
             {
                 StringBuilder stringBuilder = new();

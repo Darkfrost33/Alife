@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Alife.Framework;
 using Alife.Function.Interpreter;
@@ -225,7 +226,13 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
 
     public override async Task DestroyAsync()
     {
-        await executor.WaitToInactive();
+        //限时等待，防止卡死的处理器（如挂起的外部服务调用）让角色永远无法关闭
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(15));
+        try
+        {
+            await executor.WaitToInactive(timeout.Token);
+        }
+        catch (OperationCanceledException) {}
         await executor.DisposeAsync();
 
         await base.DestroyAsync();

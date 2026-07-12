@@ -235,7 +235,9 @@ public class ChatBot : IAsyncDisposable
         if (cancelTimerSource != null)
             await cancelTimerSource.CancelAsync();
 
-        while (IsChatting || !messageCache.IsEmpty)
+        //限时兜底：若信号量被卡死的任务永久占用（IsChatting恒为true），放弃等待直接结束
+        DateTime deadline = DateTime.Now.AddSeconds(30);
+        while ((IsChatting || !messageCache.IsEmpty) && DateTime.Now < deadline)
         {
             await TryFlushMessageCache();
 

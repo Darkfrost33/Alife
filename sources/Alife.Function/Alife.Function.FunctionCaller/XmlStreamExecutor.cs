@@ -46,7 +46,14 @@ public class XmlStreamExecutor : IAsyncDisposable
         while (commandChannel.Reader.TryRead(out _)) {}
         await handleTokenSource.CancelAsync();
         Flush();
-        await WaitToInactive();
+
+        //个别处理器可能无视取消令牌（如卡死的外部语音合成服务），限时等待避免永久阻塞调用方（乃至角色关闭流程）
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(10));
+        try
+        {
+            await WaitToInactive(timeout.Token);
+        }
+        catch (OperationCanceledException) {}
     }
     public async Task WaitToInactive(CancellationToken cancellationToken = default)
     {

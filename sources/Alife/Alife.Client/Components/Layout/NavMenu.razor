@@ -46,6 +46,17 @@
             <Icon Type="@IconType.Outline.Plus" Style="font-size: 20px; color: rgba(255,255,255,0.5);"/>
         </div>
     </Tooltip>
+
+    @if (ChatActivitySystem.GetAllChatActivities().Any())
+    {
+        <Tooltip Title="@(isForceClosing ? "正在强制关闭..." : "强制关闭全部角色")" Placement="@Placement.Right">
+            <div @onclick="@ForceCloseAll" class="nav-item-icon"
+                 style="border: 1px solid rgba(255,77,79,0.5); @(isForceClosing ? "pointer-events: none; opacity: 0.5;" : "")">
+                <Icon Type="@(isForceClosing ? "loading" : IconType.Outline.Poweroff)"
+                      Style="font-size: 20px; color: #ff4d4f;"/>
+            </div>
+        </Tooltip>
+    }
 </Flex>
 
 <Modal Title="创建新角色"
@@ -83,7 +94,26 @@
 
 @code {
     bool isCreating;
+    bool isForceClosing;
     string newCharacterName = "";
+
+    async Task ForceCloseAll()
+    {
+        if (isForceClosing)
+            return;
+
+        isForceClosing = true;
+        StateHasChanged();
+        try
+        {
+            await Task.Run(() => ChatActivitySystem.ForceDeactivateAll());
+        }
+        finally
+        {
+            isForceClosing = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
 
     protected override void OnInitialized()
     {

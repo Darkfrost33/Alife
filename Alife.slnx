@@ -17,6 +17,7 @@
     <Project Path="Demos/Alife.Demo.Vision/Alife.Demo.Vision.csproj" />
   </Folder>
   <Folder Name="/Sources/Alife.Function/Environment/">
+    <Project Path="Sources/Alife.Function/Alife.Function.ChatRoom/Alife.Function.ChatRoom.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Memory/Alife.Function.Memory.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.MessageFilter/Alife.Function.MessageFilter.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Developer/Alife.Function.Developer.csproj" />
