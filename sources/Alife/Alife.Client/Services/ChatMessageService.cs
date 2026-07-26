@@ -6,6 +6,7 @@ public class ChatSettings
 {
     public string UserTag { get; set; } = "消息来源:[ChatWindow]";
     public int MaxMessageCount { get; set; } = 100;
+    public bool ShowReasoning { get; set; } = true;
 }
 
 public class ChatMessage
@@ -14,6 +15,7 @@ public class ChatMessage
     public string? Reasoning { get; set; }
     public bool IsUser { get; set; }
     public bool IsInputting { get; set; }
+    public bool IsReasoning { get; set; }
 }
 
 /// <summary>
@@ -42,6 +44,15 @@ public class ChatMessageService
         set
         {
             settings.MaxMessageCount = value;
+            SaveSettings();
+        }
+    }
+    public bool ShowReasoning
+    {
+        get => settings.ShowReasoning;
+        set
+        {
+            settings.ShowReasoning = value;
             SaveSettings();
         }
     }
@@ -85,7 +96,7 @@ public class ChatMessageService
     readonly Dictionary<string, List<ChatMessage>> messagesMap = new();
     readonly Dictionary<string, ChatBot> chatbotMap = new();
 
-    const string SettingsKey = "ChatSettings";
+    const string SettingsKey = "Settings/ChatSettings";
     readonly StorageSystem storage;
     readonly ChatSettings settings;
 
@@ -126,6 +137,7 @@ public class ChatMessageService
             ChatMessage? aiMessage = messages.LastOrDefault(m => m is { IsUser: false, IsInputting: true });
             if (aiMessage != null)
             {
+                aiMessage.IsReasoning = false;
                 aiMessage.Content += obj;
                 MessageChanged?.Invoke(name);
             }
@@ -134,6 +146,7 @@ public class ChatMessageService
             ChatMessage? aiMessage = messages.LastOrDefault(m => m is { IsUser: false, IsInputting: true });
             if (aiMessage != null)
             {
+                aiMessage.IsReasoning = true;
                 aiMessage.Reasoning += obj;
                 MessageChanged?.Invoke(name);
             }
@@ -142,6 +155,7 @@ public class ChatMessageService
             ChatMessage? aiMessage = messages.LastOrDefault(m => m is { IsUser: false, IsInputting: true });
             if (aiMessage != null)
             {
+                aiMessage.IsReasoning = false;
                 aiMessage.IsInputting = false;
                 MessageChanged?.Invoke(name);
             }

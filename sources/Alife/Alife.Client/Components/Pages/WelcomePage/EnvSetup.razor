@@ -11,6 +11,9 @@
     <h2 class="step-title">配置运行环境</h2>
     <p class="step-desc">VC++、Python、.NET SDK（必需）及 CUDA（可选）</p>
 
+    <Alert ShowIcon="true" Type="AlertType.Info" Style="margin: 12px;"
+           Message="下载时间取决于网络情况，如果是 CUDA 额外还需要下载 2-3GB 内容。可查看任务管理器的磁盘或网络波动来确认是否正常下载中。"></Alert>
+    
     <div class="env-grid">
         @RenderEnv("VC++ 运行库", EnvChecker.IsVCRedistReady)
         @RenderEnv("Python 3.12", EnvChecker.IsPythonReady)
@@ -40,8 +43,6 @@
         </Button>
     </div>
 
-    <Alert ShowIcon="true" Type="AlertType.Info" Style="margin-top: 12px;"
-           Message="下载时间取决于网络情况，尤其是 CUDA 需要下载 2-3GB 内容。可查看任务管理器的磁盘或网络波动来确认是否正常下载中"></Alert>
 
     <div class="step-next">
         <Button Size="@ButtonSize.Large" OnClick="@OnPrev">

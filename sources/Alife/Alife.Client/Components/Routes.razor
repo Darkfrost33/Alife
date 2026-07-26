@@ -1,8 +1,75 @@
-@using Alife.Components.Layout
+@using Alife.Components.Overlay
+@using Alife.Components.Services
+@using ElectronNET.API
+@using Alife.Platform
+@inject CharacterSystem CharacterSystem
+@inject NavigationManager Navigation
+@inject IJSRuntime JsRuntime
 
-<Router AppAssembly="typeof(App).Assembly">
-    <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)"/>
-        <FocusOnNavigate RouteData="routeData" Selector="h1"/>
-    </Found>
-</Router>
+@if (isAppInitialized)
+{
+    <Router AppAssembly="typeof(App).Assembly">
+        <Found Context="routeData">
+            <RouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)"/>
+            <FocusOnNavigate RouteData="routeData" Selector="h1"/>
+        </Found>
+    </Router>
+}
+else
+{
+    <Launching/>
+}
+
+<LogOverlay/>
+<AntContainer/>
+<ErrorWindowUI Value="@exception" Title="启动失败" ValueChanged="OnErrorConfirm"/>
+
+@code
+{
+    bool isAppInitialized;
+    Exception? exception;
+
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender == false)
+            return;
+
+        //业务环境初始化
+        try
+        {
+            await Task.Run(() => {
+                EnvironmentInstaller.SetupEnvironmentPaths();
+                MirrorProvider.SetupEnvironment();
+                Program.ServiceProvider.GetRequiredService<ChatMessageService>();
+                Program.ServiceProvider.GetRequiredService<PluginMarketService>();
+            });
+        }
+        catch (Exception ex)
+        {
+            exception = ex;
+            StateHasChanged();
+            return;
+        }
+
+        isAppInitialized = true;
+        await JsRuntime.InvokeVoidAsync("alifeLaunching.complete");
+
+        //老用户重定向
+        if (new Uri(Navigation.Uri).AbsolutePath is "/")
+        {
+            if (CharacterSystem.GetAllCharacters().Count > 0)
+            {
+                Navigation.NavigateTo("/system");
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    void OnErrorConfirm(Exception? obj)
+    {
+        if (obj == null)
+            Electron.App.Exit();
+    }
+}

@@ -1,21 +1,18 @@
 <Project>
   <PropertyGroup>
+    <!-- C#功能 -->
+    <Nullable>enable</Nullable>
     <!-- 打包选项 -->
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
-    <SelfContained>false</SelfContained>
-    <PublishSelfContained>false</PublishSelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <GenerateMvcApplicationPartsAssemblyAttributes>false</GenerateMvcApplicationPartsAssemblyAttributes>
     <!-- 打包目录 -->
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <!-- 命令行 dotnet build 不传 -c 时，此处 $(Configuration) 尚未被赋默认值，需补上，否则产物会落到 Outputs\ 根下的另一份目录 -->
     <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
-    <OutputPath>$(MSBuildThisFileDirectory)Outputs\$(Configuration)\$(MSBuildProjectName)\</OutputPath>
+    <OutputPath Condition="'$(OutputPath)' == ''">$(MSBuildThisFileDirectory)Outputs\$(Configuration)\$(MSBuildProjectName)\</OutputPath>
     <OutDir>$(OutputPath)</OutDir>
-    <!-- C#功能 -->
-    <Nullable>enable</Nullable>
   </PropertyGroup>
 </Project>

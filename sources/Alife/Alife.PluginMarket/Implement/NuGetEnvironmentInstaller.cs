@@ -3,49 +3,40 @@ using Alife.Platform;
 
 namespace Alife.PluginMarket;
 
-public class NuGetEnvironmentInstaller(string packageListFile) : IEnvironmentInstaller
+public class NuGetEnvironmentInstaller(string packageListOutput, string restorePackagesOutput) : IEnvironmentInstaller
 {
     public void InstallEnvironment(IEnumerable<KeyValuePair<string, string>> environment)
     {
         VersionResolver resolver = new();
         resolver.AddRange(environment);
-
-        string tempDir = Path.Combine(Path.GetTempPath(), $"nuget_{Guid.NewGuid():N}");
-        try
-        {
-            RestorePackages(resolver, tempDir);
-            GeneratePackageList(packageListFile, tempDir);
-        }
-        finally
-        {
-            Directory.Delete(tempDir, true);
-        }
+        
+        RestorePackages(resolver, restorePackagesOutput);
+        GeneratePackageList(packageListOutput, restorePackagesOutput);
     }
 
-    static void RestorePackages(VersionResolver resolver, string tempDir)
+    static void RestorePackages(VersionResolver resolver, string restoreDir)
     {
-        Directory.CreateDirectory(tempDir);
+        Directory.CreateDirectory(restoreDir);
 
         string refs = string.Join("\n",
-            resolver.GetAllRanges().Select(dep =>
-            {
+            resolver.GetAllRanges().Select(dep => {
                 string spec = FormatVersionSpec(dep.Min, dep.Max);
                 return $"    <PackageReference Include=\"{dep.Name}\" Version=\"{spec}\" />";
             }));
 
         string csproj = $"""
-            <Project Sdk="Microsoft.NET.Sdk">
-              <PropertyGroup>
-                <TargetFramework>net10.0</TargetFramework>
-              </PropertyGroup>
-              <ItemGroup>
-            {refs}
-              </ItemGroup>
-            </Project>
-            """;
+                         <Project Sdk="Microsoft.NET.Sdk">
+                           <PropertyGroup>
+                             <TargetFramework>net10.0</TargetFramework>
+                           </PropertyGroup>
+                           <ItemGroup>
+                         {refs}
+                           </ItemGroup>
+                         </Project>
+                         """;
 
-        File.WriteAllText(Path.Combine(tempDir, "temp.csproj"), csproj);
-        AlifePlatform.Command("dotnet", $"restore {tempDir}/temp.csproj");
+        File.WriteAllText(Path.Combine(restoreDir, "RestorePackages.csproj"), csproj);
+        AlifePlatform.Command("dotnet", $"restore {restoreDir}/RestorePackages.csproj");
     }
 
     static string FormatVersionSpec(string min, string max)
@@ -97,6 +88,8 @@ public class NuGetEnvironmentInstaller(string packageListFile) : IEnvironmentIns
                     string packageVersion = pkg.Name.Split('/')[1];
                     string pkgDir = Path.Combine(nugetCache, packageRoot, packageVersion);
 
+                    int managedCountBefore = managedDirs.Count;
+
                     if (pkg.Value.TryGetProperty("compile", out var compile))
                     {
                         foreach (var dll in compile.EnumerateObject())
@@ -105,6 +98,28 @@ public class NuGetEnvironmentInstaller(string packageListFile) : IEnvironmentIns
                             string? dir = Path.GetDirectoryName(dllPath);
                             if (dir != null && Directory.Exists(dir))
                                 managedDirs.Add(dir);
+                        }
+                    }
+
+                    if (managedDirs.Count == managedCountBefore)
+                    {
+                        string[] fallbackDirs = ["lib", "lib_manual"];
+                        List<string> candidates = [];
+                        foreach (string sub in fallbackDirs)
+                        {
+                            string subDir = Path.Combine(pkgDir, sub);
+                            if (!Directory.Exists(subDir))
+                                continue;
+                            foreach (string dir in Directory.GetDirectories(subDir))
+                            {
+                                if (Directory.GetFiles(dir, "*.dll").Length > 0)
+                                    candidates.Add(dir);
+                            }
+                        }
+                        if (candidates.Count > 0)
+                        {
+                            candidates.Sort();
+                            managedDirs.Add(candidates[^1]);
                         }
                     }
 
@@ -125,13 +140,13 @@ public class NuGetEnvironmentInstaller(string packageListFile) : IEnvironmentIns
 
     public (string[] managed, string[] unmanaged) ReadPackageList()
     {
-        if (!File.Exists(packageListFile))
+        if (!File.Exists(packageListOutput))
             return ([], []);
 
         List<string> managed = new();
         List<string> unmanaged = new();
 
-        foreach (string line in File.ReadAllLines(packageListFile))
+        foreach (string line in File.ReadAllLines(packageListOutput))
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
 

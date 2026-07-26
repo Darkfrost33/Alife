@@ -16,13 +16,13 @@
 > 于是，Alife 诞生了。
 
 <div align="center">
-  <img src="Sources/Alife/Alife.Client/wwwroot/images/alife-icon.png" width="128" alt="Alife Logo" />
+  <img src="https://github.com/user-attachments/assets/7f0d259c-51cb-4709-a8d9-c4a1139008f4" width="128" height="128" alt="Alife Logo" />
 </div>
 
 # Alife - 创造赛博生命
 
 ![Alife Logo](https://img.shields.io/badge/Alife-AI_Assistant-blue?style=for-the-badge)
-![.NET 9](https://img.shields.io/badge/.NET-9.0-512BD4?style=for-the-badge&logo=dotnet)
+![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?style=for-the-badge&logo=dotnet)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-green?style=for-the-badge)
 
@@ -93,6 +93,33 @@ Alife 是一款主打桌宠陪伴方向的 AIAgent，目的是为了创造或逼
 
 ---
 
+## 📸 软件截图 (Screenshots)
+
+<table>
+  <tr>
+    <td align="center"><img src="https://github.com/user-attachments/assets/8f5ab023-7399-4224-9bb7-bdbf5791f686" width="100%" alt="欢迎页"/></td>
+    <td align="center"><img src="https://github.com/user-attachments/assets/e42b16b7-4bc0-459e-99a6-b6b446480e9b" width="100%" alt="插件市场"/></td>
+    <td align="center"><img src="https://github.com/user-attachments/assets/e8ec399c-3ffc-44b0-a53c-2d374348a150" width="100%" alt="插件配置"/></td>
+  </tr>
+  <tr>
+    <td align="center"><b>欢迎页</b></td>
+    <td align="center"><b>插件市场</b></td>
+    <td align="center"><b>插件配置</b></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="https://github.com/user-attachments/assets/c7e10001-ac49-470e-8379-0db5589daed0" width="100%" alt="角色设定"/></td>
+    <td align="center"><img src="https://github.com/user-attachments/assets/92fed28f-4e56-41a8-9964-3728674b6d34" width="100%" alt="对话看板"/></td>
+    <td align="center"><img src="https://github.com/user-attachments/assets/0eb9cece-88bd-4b47-b60d-a2568fa7aaba" width="100%" alt="上下文片段"/></td>
+  </tr>
+  <tr>
+    <td align="center"><b>角色设定</b></td>
+    <td align="center"><b>对话看板</b></td>
+    <td align="center"><b>上下文片段</b></td>
+  </tr>
+</table>
+
+---
+
 ## 🚀 快速开始 (Quick Start)
 
 1. **下载软件**：前往仓库右侧的 [Releases](https://github.com/bdffzi/Alife/releases) 页面，下载最新的软件压缩包（zip）。
@@ -122,10 +149,10 @@ Alife 是一款主打桌宠陪伴方向的 AIAgent，目的是为了创造或逼
 
 ### 📦 基本依赖
 
-- .NET 9：编程语言生态
-- Python 3.12：模型框架接入
+- .NET 10 SDK：编程语言生态
+- Python 3.12：本地模型接入
 - Semantic Kernel：基本llm协议接入
-- WPF + Blazor Hybrid + AntDesign Blazor：前端界面框架
+- ASP.NET + Blazor + AntDesign + ElectronNET：前端界面框架
 
 ### 🏛️ 解决方案目录结构
 
@@ -134,13 +161,13 @@ Alife 采用全插件化架构，解决方案按目录分组组织：
 ```
 Sources/
 ├── Alife/                              # 核心平台
-│   ├── Alife.Client/                   # 主入口 (WPF + Blazor Hybrid)
-│   ├── Alife.Framework/                # 核心框架 (插件系统、角色管理、配置、存储)
-│   ├── Alife.LanguageModel/            # 语言模型插件 (LLM 接入)
-│   └── Alife.Platform/                 # 平台抽象 (路径、日志)
+│   ├── Alife.Client/                   # 客户端外壳
+│   ├── Alife.Framework/                # 核心框架
+│   ├── Alife.PluginMarket/             # 插件市场
+│   └── Alife.Platform/                 # 平台抽象 (弃用中，平台处理应放在插件中)
 │
 ├── Alife.DeskPet/                      # 桌宠子系统
-│   ├── Alife.DeskPet.Client/           # 桌宠 WPF 客户端 (WebView2 + Live2D)
+│   ├── Alife.DeskPet.Client/           # Live2D 桌宠外挂程序
 │   └── Alife.DeskPet.Protocol/         # IPC 协议库
 │
 ├── Alife.Function/                     # 功能插件 — 以面向 AI 视角组织
@@ -176,6 +203,10 @@ Sources/
 Demos/                                  # 黑盒测试
 Tests/                                  # 单元测试
 ```
+
+### 📚 开发文档
+
+Alife 目前尚未建立文档，你可以尝试使用 Copilot、[DeepWiki](https://deepwiki.com/BDFFZI/Alife) 之类的 AI 辅助工具，不过这些生成的资料并不准确。
 
 ---
 

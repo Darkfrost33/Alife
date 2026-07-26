@@ -18,6 +18,10 @@
         {
             <div class="popup-body">@Body</div>
         }
+        else if (!string.IsNullOrEmpty(BodyText))
+        {
+            <div class="popup-body">@((MarkupString)RenderMarkdown(BodyText))</div>
+        }
 
         @if (ProgressVisible)
         {
@@ -36,6 +40,7 @@
     [Parameter] public string? Title { get; set; }
     [Parameter] public string? Icon { get; set; }
     [Parameter] public RenderFragment? Body { get; set; }
+    [Parameter] public string? BodyText { get; set; }
     [Parameter] public RenderFragment? Actions { get; set; }
     [Parameter] public bool Visible { get; set; } = true;
     [Parameter] public EventCallback VisibleChanged { get; set; }
@@ -55,6 +60,15 @@
         Visible = false;
         await VisibleChanged.InvokeAsync();
     }
+
+    string RenderMarkdown(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        text = System.Net.WebUtility.HtmlEncode(text);
+        text = System.Text.RegularExpressions.Regex.Replace(
+            text, @"\*\*(.+?)\*\*", "<b style=\"color: #1890ff;\">$1</b>");
+        return text.Replace("\n", "<br/>");
+    }
 }
 
 <style>
@@ -72,7 +86,8 @@
         padding: 16px;
         box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
         border: 1px solid #f0f0f0;
-        width: 330px;
+        width: 320px;
+        max-height: 60vh;
     }
 
     .popup-header {
@@ -89,12 +104,12 @@
     }
 
     .popup-body {
-        font-size: 12px;
-        color: rgba(0, 0, 0, 0.45);
+        font-size: 13px;
+        color: rgba(0, 0, 0, 0.65);
         margin-bottom: 12px;
-        max-height: 60px;
+        max-height: 40vh;
         overflow-y: auto;
-        white-space: pre-wrap;
+        line-height: 1.6;
     }
 
     .popup-actions {

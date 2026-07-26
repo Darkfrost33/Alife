@@ -43,7 +43,7 @@
 
 @code {
     [Parameter] public Exception? Value { get; set; }
-    [Parameter] public EventCallback<Exception> ValueChanged { get; set; }
+    [Parameter] public EventCallback<Exception?> ValueChanged { get; set; }
     [Parameter] public string Title { get; set; } = "操作失败喵！";
 
     string errorMessage = "";
@@ -54,7 +54,7 @@
     {
         if (Value != null)
         {
-            errorMessage = Value.Message ?? "";
+            errorMessage = Value.Message;
             stackTrace = Value.StackTrace ?? "";
 
             var finalException = Value.InnerException;

@@ -21,7 +21,7 @@ public record MemoryConfig
     public int Threshold { get; set; } = 100;
     public int BatchSize { get; set; } = 70;
     public float Probability { get; set; } = 0.4f;
-    public int MaxCompressionLevel { get; set; } = 7;
+    public int MaxCompressionLevel { get; set; } = 8;
     public List<string> Keywords { get; set; } = ["记得", "记住", "忆", "时候", "以前", "过去"];
     public string CompressPrompt { get; set; } =
         """
@@ -153,46 +153,46 @@ public partial class MemoryService(XmlFunctionCaller functionService)
         return matched.Count > 0 ? string.Join("\n", matched) : $"…（未显示含“{keyword}”的匹配行）…\n{string.Join("\n", lines.Take(3))}";
     }
 
-    // [XmlFunction(FunctionMode.Content)]
-    // [Description("创建一个永久记忆存档。（仅能用于存储用户画像，要求教训等关键记忆，不要用来存储那些无聊的个人娱乐活动等日常琐事）")]
-    // public async Task Memorize(XmlExecutorContext ctx,
-    //     [Description("格式为ISO-8601")] DateTime? startTime = null,
-    //     [Description("格式为ISO-8601")] DateTime? endTime = null
-    // )
-    // {
-    //     if (ctx.CallMode == CallMode.Closing)
-    //     {
-    //         DateTime start = startTime ?? DateTime.Now;
-    //         DateTime end = endTime ?? DateTime.Now;
-    //
-    //         string name = await InsertMemory(100, ctx.FullContent.Trim(), "手动存储的记忆，无原始内容。", start, end);
-    //         Poke($"成功插入永久记忆存档：{name}");
-    //     }
-    // }
-    //
-    // [XmlFunction(FunctionMode.OneShot)]
-    // [Description("移除一个永久记忆存档。）")]
-    // public void Forget([Description("存档索引")] string index)
-    // {
-    //     index = index.Trim();
-    //     ChatMessageContent? target = ChatHistory.FirstOrDefault(c => memoryManager.GetMemoryMetaData(c).Name == index);
-    //     if (target == null)
-    //     {
-    //         Poke($"未能在当前上下文中找到索引为 '{index}' 的记忆记录。");
-    //         return;
-    //     }
-    //
-    //     MemoryMeta memoryMeta = memoryManager.GetMemoryMetaData(target);
-    //     if (memoryMeta.Level < Configuration!.MaxCompressionLevel)
-    //     {
-    //         Poke($"仅支持删除层级大于等于 {Configuration!.MaxCompressionLevel} 的记忆");
-    //         return;
-    //     }
-    //
-    //     memoryManager.RemoveMemory(ChatHistory, target);
-    //     ChatBot.UpdateHistoryEndIndex();
-    //     Poke($"成功移除记忆存档：{index}（不过你仍可以通过 {nameof(Recall)} 读取其内容）");
-    // }
+    [XmlFunction(FunctionMode.Content)]
+    [Description("创建一个永久记忆（仅能用于存储珍贵的核心记忆（与他人相关的记忆），不要用来存储个人休闲活动信息）")]
+    public async Task Memorize(XmlExecutorContext ctx,
+        [Description("格式为ISO-8601")] DateTime? startTime = null,
+        [Description("格式为ISO-8601")] DateTime? endTime = null
+    )
+    {
+        if (ctx.CallMode == CallMode.Closing)
+        {
+            DateTime start = startTime ?? DateTime.Now;
+            DateTime end = endTime ?? DateTime.Now;
+
+            string name = await InsertMemory(100, ctx.FullContent.Trim(), "手动存储的记忆，无原始内容。", start, end);
+            Poke($"成功插入永久记忆存档：{name}");
+        }
+    }
+
+    [XmlFunction(FunctionMode.OneShot)]
+    [Description("移除一个永久记忆")]
+    public void Forget([Description("存档索引")] string index)
+    {
+        index = index.Trim();
+        ChatMessageContent? target = ChatHistory.FirstOrDefault(c => memoryManager.GetMemoryMetaData(c).Name == index);
+        if (target == null)
+        {
+            Poke($"未能在当前上下文中找到索引为 '{index}' 的记忆记录。");
+            return;
+        }
+
+        MemoryMeta memoryMeta = memoryManager.GetMemoryMetaData(target);
+        if (memoryMeta.Level < Configuration!.MaxCompressionLevel)
+        {
+            Poke($"仅支持删除层级大于等于 {Configuration!.MaxCompressionLevel} 的记忆");
+            return;
+        }
+
+        memoryManager.RemoveMemory(ChatHistory, target);
+        ChatBot.UpdateHistoryEndIndex();
+        Poke($"成功移除记忆存档：{index}（不过你仍可以通过 {nameof(ReadMemoryArchive)} 读取其内容）");
+    }
 
     public async Task<string> InsertMemory(int level, string summary, string content, DateTime startTime, DateTime endTime)
     {
@@ -251,7 +251,7 @@ public partial class MemoryService(XmlFunctionCaller functionService)
 
         storagePath = Path.Combine(AlifePath.StorageFolderPath, context.Character.StorageKey, "Memory");
         xmlHandler = new(this) {
-            Description = "当你想要回忆往事查找记忆时使用",
+            Description = "当你想要回忆往事或存储额外记忆时使用",
             Explanation = $$"""
                             记忆存储介绍
                             - 早期聊天记录会被总结为记忆存档，每个存档有唯一ID，格式为`等级-最早日期范围-最大日期范围`。其中等级表示被压缩次数（早期存档也会被二次压缩）
@@ -282,6 +282,7 @@ public partial class MemoryService(XmlFunctionCaller functionService)
 
         //加载历史记忆
         memoryManager.LoadHistory(ChatHistory);
+        ChatBot.UpdateHistoryEndIndex();
     }
 
     string OnChatSend(string message)

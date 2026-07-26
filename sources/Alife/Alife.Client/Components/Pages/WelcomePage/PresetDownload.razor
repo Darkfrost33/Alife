@@ -12,6 +12,9 @@
     <h2 class="step-title">安装官方推荐插件</h2>
     <p class="step-desc">Alife是全插件框架，功能自由扩展搭配。新手推荐先尝试官方推荐插件！</p>
 
+    <Alert ShowIcon="true" Type="AlertType.Info" Style="margin: 12px;"
+           Message="插件安装时，会涉及大量python环境配置，时间非常久，注意观察任务管理器中的python程序波动，来确认安装是否正常进行。"></Alert>
+
     @if (installProgress != null)
     {
         <div class="progress-tip">
@@ -102,7 +105,7 @@
         "Alife.Function.Speech",
         "Alife.Function.Speech.VITS",
         "Alife.Function.Vision",
-        "Alife.Function.Vision.MiniCPM",
+        // "Alife.Function.Vision.MiniCPM",
     ];
 
     List<Plugin> availablePlugins = new();
@@ -120,8 +123,20 @@
 
         installProgress = (0, 0, "正在获取最新插件市场...");
         StateHasChanged();
-        await PluginMarketService.FetchOnlinePluginsAsync();
-        installProgress = null;
+        try
+        {
+            await PluginMarketService.FetchOnlinePluginsAsync();
+        }
+        catch (Exception ex)
+        {
+            operException = ex;
+            StateHasChanged();
+            return;
+        }
+        finally
+        {
+            installProgress = null;
+        }
 
         var allPlugins = PluginMarketService.GetAllPlugins().ToList();
         foreach (string id in RecommendedPluginIds)

@@ -16,6 +16,8 @@
             <AntDesign.Text Type="@TextElementType.Secondary" Style="font-size: 12px;">最大条数:</AntDesign.Text>
             <AntDesign.InputNumber @bind-Value="ChatMessageService.MaxMessageCount" Min="10" Max="10000"
                                    Size="@InputSize.Small" Style="width: 80px; border-radius: 4px;"/>
+            <AntDesign.Text Type="@TextElementType.Secondary" Style="font-size: 12px;">展开思考:</AntDesign.Text>
+            <Switch @bind-Value="ChatMessageService.ShowReasoning"/>
         </div>
         <Button Icon="@IconType.Outline.Clear"
                 Type="@ButtonType.Link"
@@ -45,15 +47,15 @@
                                     <div class="chat-message-content">
                                         @if (!string.IsNullOrEmpty(message.Reasoning))
                                         {
-                                            <div class="chat-reasoning">
-                                                <div class="chat-reasoning-title">
-                                                    <Icon Type="bulb" Theme="IconThemeType.Outline"/>
+                                            <details class="chat-reasoning" open="@ChatMessageService.ShowReasoning">
+                                                <summary class="chat-reasoning-title">
+                                                    <Icon Type="@(message.IsReasoning ? IconType.Outline.Loading : IconType.Outline.Bulb)"/>
                                                     思考过程
-                                                </div>
+                                                </summary>
                                                 <div class="chat-reasoning-content">
                                                     @message.Reasoning
                                                 </div>
-                                            </div>
+                                            </details>
                                         }
                                         <AntDesign.Text Style="white-space: pre-wrap; font-size: 15px;">
                                             @message.Content
@@ -87,15 +89,13 @@
         <div class="chat-input-container">
             <Flex Gap="@("12")" Align="@FlexAlign.End" Style="flex: 1; min-height: 0;">
                 <div style="flex: 1; align-self: stretch; position: relative; min-height: 0;">
-                    <textarea id="chatInput"
-                              class="native-chat-input"
-                              placeholder="@("输入消息... (Enter 发送，Shift+Enter 换行，Ctrl+V 粘贴文本或文件)")"
-                              @bind="inputText"
-                              @bind:event="oninput"
-                              @onkeydown="HandleNativeKeyDown"
-                              @onkeydown:preventDefault="shouldPreventDefault"
-                              @onpaste="HandlePaste"
-                              @onpaste:preventDefault="true"></textarea>
+                    <TextArea Id="chatInput"
+                              @key="inputVersion"
+                              Class="chat-input"
+                              Placeholder="@("输入消息... (Enter 发送，Shift+Enter 换行，Ctrl+V 粘贴文本或文件)")"
+                              @bind-Value="inputText"
+                              BindOnInput="true"
+                              Rows="3"/>
 
                     @if (isWorking)
                     {
@@ -131,33 +131,20 @@
         min-height: 100px;
     }
 
-    .native-chat-input {
-        width: 100%;
-        height: 100%;
+    .chat-input {
+        height: 100% !important;
         border-radius: 12px;
-        border: 1px solid #d9d9d9;
         padding: 12px 16px;
-        resize: vertical;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         font-size: 14px;
         line-height: 1.6;
         min-height: 60px;
-        transition: all 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
-        outline: none;
         background: #fcfcfc;
-        display: block;
-        box-sizing: border-box;
+        resize: none;
     }
 
-    .native-chat-input:hover {
-        border-color: #40a9ff;
+    .chat-input:hover,
+    .chat-input:focus {
         background: #fff;
-    }
-
-    .native-chat-input:focus {
-        border-color: #1890ff;
-        background: #fff;
-        box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
     }
 
     .chat-splitter {
@@ -254,6 +241,26 @@
         display: flex;
         align-items: center;
         gap: 4px;
+        cursor: pointer;
+        list-style: none;
+    }
+
+    .chat-reasoning-title::-webkit-details-marker {
+        display: none;
+    }
+
+    .chat-reasoning:not([open]) .chat-reasoning-title {
+        margin-bottom: 0;
+    }
+
+    .chat-reasoning .chat-reasoning-title::after {
+        content: " ▼";
+        font-size: 11px;
+        color: rgba(0, 0, 0, 0.35);
+    }
+
+    .chat-reasoning:not([open]) .chat-reasoning-title::after {
+        content: " ▶";
     }
 
     .chat-reasoning-content {
@@ -364,6 +371,66 @@
         el.focus();
         el.dispatchEvent(new Event('input', {bubbles: true}));
     };
+
+    window.getElementValue = (elementId) => {
+        const el = document.getElementById(elementId);
+        return el?.value ?? "";
+    };
+
+    window.setupChatInputEnter = (elementId, dotNetRef) => {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+
+        if (el._chatEnterHandler) {
+            el.removeEventListener('keydown', el._chatEnterHandler);
+        }
+
+        el._chatEnterHandler = (event) => {
+            const shouldSend = event.key === 'Enter' && !event.shiftKey && !event.isComposing;
+            if (!shouldSend) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            dotNetRef.invokeMethodAsync('OnNativeEnterAsync', el.value);
+        };
+
+        el.addEventListener('keydown', el._chatEnterHandler);
+    };
+
+    window.setupChatInputPaste = (elementId) => {
+        const el = document.getElementById(elementId);
+        if (!el || el._pasteHandlerSetup) return;
+        el._pasteHandlerSetup = true;
+
+        el.addEventListener('paste', (event) => {
+            event.preventDefault();
+            const files = event.clipboardData?.files;
+            if (files && files.length > 0) {
+                const paths = Array.from(files).map(f => f.path).filter(p => p);
+                if (paths.length > 0) {
+                    window.insertTextAtCursor(elementId, paths.join('\n'));
+                    return;
+                }
+            }
+            const text = event.clipboardData?.getData('text') ?? '';
+            if (text) {
+                window.insertTextAtCursor(elementId, text);
+            }
+        });
+    };
+
+    window.focusElementById = (elementId) => {
+        requestAnimationFrame(() => {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+
+            el.focus({preventScroll: true});
+            if (typeof el.setSelectionRange === 'function') {
+                const position = el.value?.length ?? 0;
+                el.setSelectionRange(position, position);
+            }
+        });
+    };
 </script>
 @using Alife.Components.Services
 
@@ -377,7 +444,8 @@
     string occupiedReasonText = "";
     Exception? chatException;
     bool isDisposed;
-    bool shouldPreventDefault;
+    int inputVersion;
+    DotNetObjectReference<ChatWindowUI>? dotNetRef;
 
     protected override void OnInitialized()
     {
@@ -412,8 +480,12 @@
         if (firstRender)
         {
             await JsRuntime.InvokeVoidAsync("setupChatScroll");
+            dotNetRef = DotNetObjectReference.Create(this);
         }
         await JsRuntime.InvokeVoidAsync("setupSplitter");
+        if (dotNetRef != null)
+            await JsRuntime.InvokeVoidAsync("setupChatInputEnter", "chatInput", dotNetRef);
+        await JsRuntime.InvokeVoidAsync("setupChatInputPaste", "chatInput");
     }
     public void Dispose()
     {
@@ -424,6 +496,8 @@
         ChatMessageService.MessageChanged -= OnMessageChanged;
         ChatMessageService.UserMessageSent -= OnUserMessageSent;
         ChatMessageService.ChatExceptionThrew -= OnChatExceptionThrew;
+        ChatMessageService.ChatbotMapUpdated -= OnChatbotMapUpdated;
+        dotNetRef?.Dispose();
     }
 
     async Task UpdateStatusLoop()
@@ -447,25 +521,11 @@
         }
     }
 
-    async Task HandlePaste()
+    [JSInvokable]
+    public Task OnNativeEnterAsync(string rawInputText)
     {
-        string? content = NativeClipboard.GetPastedContent();
-        if (content != null)
-        {
-            await JsRuntime.InvokeVoidAsync("insertTextAtCursor", "chatInput", content);
-        }
+        return OnSend(rawInputText);
     }
-    void HandleNativeKeyDown(KeyboardEventArgs e)
-    {
-        // 关键：在 keydown 阶段判断是否需要拦截换行
-        shouldPreventDefault = e is { Key: "Enter", ShiftKey: false };
-
-        if (shouldPreventDefault && !e.IsComposing)
-        {
-            _ = OnSend();
-        }
-    }
-
     void OnMessageChanged(string name)
     {
         if (name == CharacterName)
@@ -495,20 +555,27 @@
 
         StateHasChanged();
     }
-    async Task OnSend()
+    async Task OnSend(string? providedInputText = null)
     {
-        string rawInputText = await JsRuntime.InvokeAsync<string>(
-            "eval", "var el = document.getElementById('chatInput'); var val = el.value; if(el) el.value = ''; val;"
-        );// 彻底绕过不同步的 C# 变量，直接从 DOM 获取最新值并清空
+        string rawInputText = providedInputText ?? await JsRuntime.InvokeAsync<string>("getElementValue", "chatInput");
+        if (string.IsNullOrEmpty(rawInputText))
+            rawInputText = inputText;
+
         inputText = string.Empty;
+        inputVersion++;
 
         if (string.IsNullOrWhiteSpace(rawInputText))
+        {
+            await InvokeAsync(StateHasChanged);
+            await JsRuntime.InvokeVoidAsync("focusElementById", "chatInput");
             return;
+        }
 
         ChatMessageService.SendMessage(CharacterName, rawInputText.Trim());
         ChatMessageService.SetDraft(CharacterName, "");// 发送成功后清空草稿
+        await InvokeAsync(StateHasChanged);
 
         await JsRuntime.InvokeVoidAsync("forceScrollBottom");
+        await JsRuntime.InvokeVoidAsync("focusElementById", "chatInput");
     }
 }
-

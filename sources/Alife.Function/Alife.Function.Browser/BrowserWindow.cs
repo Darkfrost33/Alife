@@ -19,19 +19,28 @@ public class BrowserWindow : Form
     readonly WebView2 webView2;
     CoreWebView2Environment? coreWebView2Environment;
 
-    Rectangle savedBounds;
+    Rectangle? savedBounds;
 
     void ShowWindow()
     {
         Show();
         ShowInTaskbar = true;
-        WindowState = FormWindowState.Normal;
-        Bounds = savedBounds;
+
+        if (savedBounds.HasValue)
+        {
+            WindowState = FormWindowState.Normal;
+            Bounds = savedBounds.Value;
+        }
+        else
+        {
+            WindowState = FormWindowState.Maximized;
+        }
+
         Activate();
     }
     void HideWindow()
     {
-        savedBounds = Bounds;
+        savedBounds = WindowState == FormWindowState.Normal ? Bounds : null;
         ShowInTaskbar = false;
         WindowState = FormWindowState.Minimized;
         Hide();

@@ -2,7 +2,7 @@
 
 public class OpenAILanguageModelConfig
 {
-    public string endpoint = "https://api.deepseek.com/v1";
+    public string endpoint = "";
     public string modelId = "";
     public string apiKey = "";
     public string reasoningEffort = "low";

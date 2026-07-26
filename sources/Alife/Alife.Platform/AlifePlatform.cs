@@ -68,7 +68,6 @@ public static class AlifePlatform
         //最终进度报告
         progress?.Invoke(readSoFar, totalBytes);
     }
-
     /// <summary>
     /// 通过 HttpClient 获取远程字符串内容
     /// </summary>
@@ -99,9 +98,10 @@ public static class AlifePlatform
         string zipPath = Path.Combine(rootPath, "temp.zip");
         await DownloadFileAsync(url, zipPath);
 
-        ZipFile.ExtractToDirectory(zipPath, rootPath, overwriteFiles: true);
+        await ZipFile.ExtractToDirectoryAsync(zipPath, rootPath, overwriteFiles: true);
         File.Delete(zipPath);
     }
+
     public static string Command(string fileName, string arguments)
     {
         if (CommandIgnore.Length != 0)
@@ -126,11 +126,11 @@ public static class AlifePlatform
         StringBuilder stderrBuilder = new();
         if (process != null)
         {
-            process.OutputDataReceived += (s, e) => {
+            process.OutputDataReceived += (_, e) => {
                 Console.WriteLine(e.Data);
                 stdoutBuilder.AppendLine(e.Data);
             };
-            process.ErrorDataReceived += (s, e) => {
+            process.ErrorDataReceived += (_, e) => {
                 Console.WriteLine(e.Data);
                 stderrBuilder.AppendLine(e.Data);
             };
@@ -144,7 +144,6 @@ public static class AlifePlatform
 
         return string.IsNullOrEmpty(stderr) ? stdout : $"{stdout}\n{stderr}";
     }
-
     public static (int Width, int Height) GetResolution()
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -152,49 +151,6 @@ public static class AlifePlatform
 
         throw new PlatformNotSupportedException("当前平台不支持获取分辨率。");
     }
-
-    [Obsolete("实际测试发现无法检测自然锁屏")]
-    public static bool IsLocking()
-    {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            return WindowsPlatform.IsLocking();
-
-        return false;
-    }
-
-    public static void Notice(string title, string message)
-    {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            WindowsPlatform.Notice(title, message);
-            return;
-        }
-
-        AlifeTerminal.LogWarning($"[Notification] {title}: {message} (当前平台暂不支持弹出式通知)");
-    }
-
-    public static string GetRunningWindowTitles()
-    {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            return WindowsPlatform.GetRunningWindowTitles();
-
-        return "当前平台不支持窗口枚举";
-    }
-
-    public static string? PickFolder(string title = "请选择文件夹")
-    {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            return WindowsPlatform.PickFolder(title);
-
-        throw new PlatformNotSupportedException("当前平台暂不支持目录选择对话框。");
-    }
-
-    public static async Task<string?> PickFolderAsync(string title = "请选择文件夹")
-    {
-        await Task.Delay(50);
-        return PickFolder(title);
-    }
-
     public static async Task<string> OcrAsync(string path)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -208,8 +164,6 @@ public static class AlifePlatform
     static AlifePlatform()
     {
         string commandIgnoreFile = Path.Combine(AlifePath.RuntimeFolderPath, "CommandIgnore.txt");
-        if (File.Exists(commandIgnoreFile) == false)
-            File.Create(commandIgnoreFile).Close();
-        CommandIgnore = File.ReadAllLines(commandIgnoreFile).Where(s => string.IsNullOrEmpty(s.Trim()) == false).ToArray();
+        CommandIgnore = File.Exists(commandIgnoreFile) ? File.ReadAllLines(commandIgnoreFile).Where(s => string.IsNullOrEmpty(s.Trim()) == false).ToArray() : [];
     }
 }

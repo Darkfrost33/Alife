@@ -2,10 +2,13 @@
 
 namespace Alife.PluginMarket;
 
-public class FileSystemPluginManager(string rootPath) : IPluginResolver, IPluginInstaller
+public class FileSystemPluginManager : IPluginResolver, IPluginInstaller
 {
-    const string VersionFile = "VERSION.txt";
-
+    public FileSystemPluginManager(string rootPath)
+    {
+        Directory.CreateDirectory(rootPath);
+        this.rootPath = rootPath;
+    }
     public Dictionary<string, string> GetPlugins()
     {
         Dictionary<string, string> dictionary = new();
@@ -60,4 +63,7 @@ public class FileSystemPluginManager(string rootPath) : IPluginResolver, IPlugin
             Directory.Delete(pluginPath, true);
         return Task.CompletedTask;
     }
+
+    const string VersionFile = "VERSION.txt";
+    readonly string rootPath;
 }

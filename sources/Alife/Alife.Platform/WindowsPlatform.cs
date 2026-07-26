@@ -133,22 +133,6 @@ public static class WindowsPlatform
         return titles.Count > 0 ? string.Join(", ", titles) : "无可见窗口";
     }
 
-    public static string? PickFolder(string title)
-    {
-        var dialog = new Microsoft.Win32.OpenFolderDialog {
-            Title = title
-        };
-
-        // 确保初始目录路径格式正确且存在，否则会触发 Shell API 异常
-        string initialDir = AlifePath.StorageFolderPath;
-        if (!string.IsNullOrWhiteSpace(initialDir) && Directory.Exists(initialDir))
-        {
-            dialog.InitialDirectory = Path.GetFullPath(initialDir);
-        }
-
-        return dialog.ShowDialog() == true ? dialog.FolderName : null;
-    }
-
     public static async Task<string> OcrAsync(string path)
     {
         if (File.Exists(path) == false)

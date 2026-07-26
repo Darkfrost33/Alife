@@ -155,32 +155,28 @@ public class ModuleSystem
                         encoding: System.Text.Encoding.UTF8))
                     .ToList();
 
-                //收集元数据引用（去重）
+                //收集dll环境
                 var references = new List<MetadataReference>();
                 var addedAssemblies = new HashSet<string>();
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())//部分dll在运行时目录
+
+                List<string> collectionPath = new();
+                collectionPath.AddRange(AppDomain.CurrentDomain.GetAssemblies().Select(assembly => assembly.Location));//已加载程序集
+                collectionPath.AddRange(Directory.GetFiles(AppContext.BaseDirectory, "*.dll"));//自包含程序集
+                collectionPath.AddRange(Directory.GetFiles(source, "*.dll", SearchOption.AllDirectories));//插件自带程序集
+                collectionPath.AddRange(managedExtraDirectories.Select(path => Directory.GetFiles(path, "*.dll")).SelectMany(strings => strings));//nuget程序集
+                foreach (var file in collectionPath)
                 {
-                    if (asm.IsDynamic || string.IsNullOrEmpty(asm.Location))
-                        continue;
-                    references.Add(MetadataReference.CreateFromFile(asm.Location));
-                    addedAssemblies.Add(asm.GetName().Name!);
-                }
-                foreach (var path in managedExtraDirectories.Prepend(source))//插件目录的dll和nuget都用于编译
-                {
-                    foreach (string file in Directory.GetFiles(path, "*.dll", SearchOption.AllDirectories))
+                    try
                     {
-                        try
-                        {
-                            var name = AssemblyName.GetAssemblyName(file);
-                            if (addedAssemblies.Contains(name.Name!))
-                                continue;
-                            references.Add(MetadataReference.CreateFromFile(file));
-                            addedAssemblies.Add(name.Name!);
-                        }
-                        catch
-                        {
-                            // ignored
-                        }
+                        var name = AssemblyName.GetAssemblyName(file);
+                        if (addedAssemblies.Contains(name.Name!))
+                            continue;
+                        references.Add(MetadataReference.CreateFromFile(file));
+                        addedAssemblies.Add(name.Name!);
+                    }
+                    catch
+                    {
+                        // ignored
                     }
                 }
 
@@ -232,7 +228,7 @@ public class ModuleSystem
     readonly string moduleRoot = Path.Combine(AlifePath.StorageFolderPath, "Plugins");
 #endif
 
-    readonly string moduleSystemConfig = "ModuleCategory";
+    readonly string moduleSystemConfig = "Settings/ModuleCategory";
     readonly StorageSystem storageSystem;
     readonly Dictionary<string, Type> moduleTypes;
     readonly StringFolder moduleFolder;

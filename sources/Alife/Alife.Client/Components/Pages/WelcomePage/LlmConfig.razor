@@ -1,5 +1,3 @@
-@using Alife.Components.Services
-@using Alife.Framework
 @inject ConfigurationSystem ConfigurationSystem
 @inject IMessageService MessageService
 @inject INotificationService NotificationService
@@ -11,10 +9,14 @@
     </div>
     <h2 class="step-title">配置 LLM 信息</h2>
     <p class="step-desc">接入 OpenAI 兼容协议的大语言模型</p>
-    
+
+    <Alert ShowIcon="true" Type="AlertType.Info" Style="margin: 12px;"
+           Message="LLM一般要钱，本地的又太蠢。但网上依然有很多免费鸡蛋可以领，比如 https://opencode.ai/zen 每天会提供一些免费额度，你只要注册账号，然后复制粘贴你的 API 密钥即可。"></Alert>
+
     <Form TModel="OpenAILanguageModelConfig" Model="@llmConfig" Layout="@FormLayout.Vertical" Size="@FormSize.Small">
         <FormItem Label="API Base URL（端点）">
-            <Input @bind-Value="@llmConfig.endpoint" Placeholder="例如: https://api.deepseek.com/v1" Size="@InputSize.Small"/>
+            <Input @bind-Value="@llmConfig.endpoint" Placeholder="例如: https://api.deepseek.com/v1"
+                   Size="@InputSize.Small"/>
         </FormItem>
         <FormItem Label="API Key（密钥）">
             <InputPassword @bind-Value="@llmConfig.apiKey" Placeholder="填入你的 API Key" Size="@InputSize.Small"/>
@@ -34,19 +36,26 @@
             else
             {
                 <div style="display:flex;gap:6px;">
-                    <Input @bind-Value="@llmConfig.modelId" Placeholder="输入模型名 (可尝试点击探测获取)" Size="@InputSize.Small" Style="flex:1;"/>
-                    <Button Size="@ButtonSize.Small" Icon="@IconType.Outline.Search" Loading="@isFetchingModels" OnClick="@FetchModels">探测</Button>
+                    <Input @bind-Value="@llmConfig.modelId" Placeholder="输入模型名 (可尝试点击探测获取)"
+                           Size="@InputSize.Small" Style="flex:1;"/>
+                    <Button Size="@ButtonSize.Small" Icon="@IconType.Outline.Search" Loading="@isFetchingModels"
+                            OnClick="@FetchModels">探测
+                    </Button>
                 </div>
             }
         </FormItem>
     </Form>
-    
+
     <div class="step-nav">
         <Button Size="@ButtonSize.Large" OnClick="@OnPrev">
-            <Icon Type="@IconType.Outline.ArrowLeft"/> 上一步
+            <Icon Type="@IconType.Outline.ArrowLeft"/>
+            上一步
         </Button>
-        <Button Type="@ButtonType.Primary" Size="@ButtonSize.Large" Disabled="@(string.IsNullOrWhiteSpace(llmConfig.endpoint) || string.IsNullOrWhiteSpace(llmConfig.apiKey))" OnClick="@OnSaveAndNext">
-            下一步 <Icon Type="@IconType.Outline.ArrowRight"/>
+        <Button Type="@ButtonType.Primary" Size="@ButtonSize.Large"
+                Disabled="@(string.IsNullOrWhiteSpace(llmConfig.endpoint) || string.IsNullOrWhiteSpace(llmConfig.apiKey))"
+                OnClick="@OnSaveAndNext">
+            下一步
+            <Icon Type="@IconType.Outline.ArrowRight"/>
         </Button>
     </div>
 </div>
@@ -55,30 +64,37 @@
     [Parameter] public EventCallback OnPrevStep { get; set; }
     [Parameter] public EventCallback OnNextStep { get; set; }
 
-    readonly OpenAILanguageModelConfig llmConfig = new();
+    readonly OpenAILanguageModelConfig llmConfig = new() {
+        endpoint = "https://opencode.ai/zen/v1",
+        modelId = "deepseek-v4-flash-free"
+    };
     bool isFetchingModels;
     List<string> availableModels = new();
     Exception? operException;
 
     protected override void OnInitialized()
     {
-        object? cfg = ConfigurationSystem.GetConfiguration(typeof(OpenAILanguageModel));
-        if (cfg is OpenAILanguageModelConfig existing)
+        if (ConfigurationSystem.HasConfiguration(typeof(OpenAILanguageModel)))
         {
-            llmConfig.endpoint = existing.endpoint;
-            llmConfig.modelId = existing.modelId;
-            llmConfig.apiKey = existing.apiKey;
-            llmConfig.reasoningEffort = existing.reasoningEffort;
-            llmConfig.extraHeaders = existing.extraHeaders;
-            llmConfig.extraBody = existing.extraBody;
+            OpenAILanguageModelConfig configuration = (OpenAILanguageModelConfig)ConfigurationSystem.GetConfiguration(typeof(OpenAILanguageModel))!;
+            llmConfig.endpoint = configuration.endpoint;
+            llmConfig.modelId = configuration.modelId;
+            llmConfig.apiKey = configuration.apiKey;
+            llmConfig.reasoningEffort = configuration.reasoningEffort;
+            llmConfig.extraHeaders = configuration.extraHeaders;
+            llmConfig.extraBody = configuration.extraBody;
         }
     }
 
     async Task FetchModels()
     {
         if (string.IsNullOrWhiteSpace(llmConfig.endpoint) || string.IsNullOrWhiteSpace(llmConfig.apiKey))
-        { MessageService.Warning("请先填写 Endpoint 和 API Key"); return; }
-        isFetchingModels = true; StateHasChanged();
+        {
+            MessageService.Warning("请先填写 Endpoint 和 API Key");
+            return;
+        }
+        isFetchingModels = true;
+        StateHasChanged();
         try
         {
             using HttpClient c = new();
@@ -98,13 +114,20 @@
             else operException = new Exception($"拉取失败 ({r.StatusCode})");
         }
         catch (Exception ex) { operException = ex; }
-        finally { isFetchingModels = false; StateHasChanged(); }
+        finally
+        {
+            isFetchingModels = false;
+            StateHasChanged();
+        }
     }
 
     void OnSaveLlmConfig()
     {
         if (string.IsNullOrWhiteSpace(llmConfig.apiKey) || string.IsNullOrWhiteSpace(llmConfig.endpoint))
-        { MessageService.Warning("Endpoint 和 API Key 不能为空"); return; }
+        {
+            MessageService.Warning("Endpoint 和 API Key 不能为空");
+            return;
+        }
         ConfigurationSystem.SetConfiguration(typeof(OpenAILanguageModel), llmConfig);
         _ = NotificationService.Success(new NotificationConfig { Message = "LLM 配置已保存！" });
     }
@@ -122,8 +145,35 @@
 }
 
 <style>
-.step-icon { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
-.step-title { margin: 0 0 8px; font-size: 20px; font-weight: 700; color: #1a1a1a; text-align: center; }
-.step-desc { margin: 0 0 20px; font-size: 13px; color: rgba(0,0,0,.45); text-align: center; }
-.step-nav { display: flex; justify-content: space-between; margin-top: 16px; gap: 12px; }
+    .step-icon {
+        width: 56px;
+        height: 56px;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 16px;
+    }
+
+    .step-title {
+        margin: 0 0 8px;
+        font-size: 20px;
+        font-weight: 700;
+        color: #1a1a1a;
+        text-align: center;
+    }
+
+    .step-desc {
+        margin: 0 0 20px;
+        font-size: 13px;
+        color: rgba(0, 0, 0, .45);
+        text-align: center;
+    }
+
+    .step-nav {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 16px;
+        gap: 12px;
+    }
 </style>

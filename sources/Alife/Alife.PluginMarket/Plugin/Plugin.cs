@@ -16,18 +16,18 @@ public class Plugin
     [JsonProperty("description")]
     public string Description { get; set; } = string.Empty;
 
-    [JsonProperty("dependencies")]
-    public Dictionary<string, string>? Dependencies { get; set; }
-
-    [JsonProperty("environments")]
-    public Dictionary<string, Dictionary<string, string>>? Environments { get; set; }
-
     [JsonProperty("tags")]
     public List<string>? Tags { get; set; }
 
     [JsonProperty("source")]
     public string Source { get; set; } = string.Empty;
+    
+    [JsonProperty("dependencies")]
+    public Dictionary<string, string>? Dependencies { get; set; }
 
+    [JsonProperty("environments")]
+    public Dictionary<string, Dictionary<string, string>>? Environments { get; set; }
+    
     [JsonProperty("releases")]
     public Dictionary<string, PluginRelease>? Releases { get; set; }
 

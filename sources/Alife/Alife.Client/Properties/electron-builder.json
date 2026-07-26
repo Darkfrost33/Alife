@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/refs/heads/master/packages/app-builder-lib/scheme.json",
+  "compression": "maximum",
+  "files": [
+    "**/*",
+    "!bin/**"
+  ],
+  "win": {
+    "icon": "alife-icon.ico",
+    "requestedExecutionLevel": "requireAdministrator",
+    "target": [
+      {
+        "target": "dir",
+        "arch": "x64"
+      }
+    ]
+  }
+}

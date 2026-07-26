@@ -1,8 +1,23 @@
 @inherits LayoutComponentBase
 @using Alife.Components.Overlay
-@implements IDisposable
 @inject CharacterSystem CharacterSystem
-@inject NavigationManager Navigation
+@inject NavigationManager NavigationManager
+
+<div class="app-container">
+    <!-- 侧边栏导航 -->
+    <div class="global-sidebar" style="width: 80px; flex-shrink: 0; padding-top: 24px;">
+        <NavMenu/>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="main-content">
+        @Body
+    </div>
+</div>
+
+<CharacterLoadingOverlay/>
+<AutoActivateOverlay/>
+<UpdateNotificationOverlay/>
 
 <style>
     .app-container {
@@ -16,7 +31,7 @@
 
     .global-sidebar {
         background: #001529 !important;
-        border-right: 1px solid rgba(255,255,255,0.1);
+        border-right: 1px solid rgba(255, 255, 255, 0.1);
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -33,51 +48,17 @@
     }
 </style>
 
-<div class="app-container">
-    <!-- 第一层 Sider: 全局主导航 -->
-    <div class="global-sidebar" style="width: 80px; flex-shrink: 0; padding-top: 24px;">
-        <NavMenu/>
-    </div>
-
-    <!-- 主内容区 -->
-    <div class="main-content">
-        @Body
-    </div>
-</div>
-
-<CharacterLoadingOverlay/>
-<AutoActivateOverlay/>
-<UpdateNotificationOverlay/>
-<LogOverlay/>
-<AntContainer/>
-
 @code {
-    bool redirected;
 
     protected override void OnInitialized()
     {
-        TryRedirect();
-        Navigation.LocationChanged += OnLocationChanged;
-    }
-
-    void OnLocationChanged(object? sender, LocationChangedEventArgs e)
-    {
-        TryRedirect();
-    }
-
-    void TryRedirect()
-    {
-        if (redirected) return;
-        bool onWelcome = new Uri(Navigation.Uri).AbsolutePath is "/" or "/welcome";
-        if (onWelcome && CharacterSystem.GetAllCharacters().Count > 0)
+        if (new Uri(NavigationManager.Uri).AbsolutePath is "/")
         {
-            redirected = true;
-            Navigation.NavigateTo("/system");
+            if (CharacterSystem.GetAllCharacters().Count > 0)
+            {
+                NavigationManager.NavigateTo("/system");
+            }
         }
     }
 
-    public void Dispose()
-    {
-        Navigation.LocationChanged -= OnLocationChanged;
-    }
 }

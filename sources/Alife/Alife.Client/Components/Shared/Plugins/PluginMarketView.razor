@@ -7,9 +7,11 @@
 @inject PluginMarketService PluginMarketService
 @inject IMessageService MessageService
 @inject IJSRuntime JsRuntime
+@inject StorageSystem StorageSystem
+@inject UpdateService UpdateService
 @implements IAsyncDisposable
 
-<ErrorWindowUI @bind-Value="@operException" />
+<ErrorWindowUI @bind-Value="@operException"/>
 
 <div style="height: 100%; overflow: hidden; display: flex; flex-direction: column; background: #fafafa;">
     @* 标题栏 *@
@@ -38,11 +40,14 @@
             </Tooltip>
             @if (upgradableCount > 0)
             {
-                <Badge Count="@upgradableCount" Size="@AntDesign.BadgeSize.Small">
-                    <Button Type="@ButtonType.Link" Icon="@IconType.Outline.ArrowUp" OnClick="OpenUpgradeModal"
-                            Loading="isUpgrading" Style="color: #52c41a;">
-                        一键升级
-                    </Button>
+                <Badge Count="upgradableCount" Size="@AntDesign.BadgeSize.Small">
+                    <Tooltip Title="@(UpdateService.HasUpdate ? "请先升级软件到最新版本" : "")">
+                        <Button Type="@ButtonType.Link" Icon="@IconType.Outline.ArrowUp" OnClick="OpenUpgradeModal"
+                                Style="@($"color: {(UpdateService.HasUpdate ? "#d9d9d9" : "#52c41a")};")"
+                                Class="@("upgrade-btn" + (showUpgradeModal || hideUpgradeAnimation ? " upgrade-paused" : ""))">
+                            一键升级
+                        </Button>
+                    </Tooltip>
                 </Badge>
             }
         </Flex>
@@ -60,21 +65,29 @@
     @* 搜索栏 *@
     <div style="padding: 8px 16px; background: #fff; border-bottom: 1px solid #f0f0f0;">
         <div style="display: flex; gap: 8px; align-items: center;">
-            <Search Placeholder="搜索插件名称、ID、描述..." @bind-Value="searchText" OnSearch="@(() => FilterPlugins())" Style="flex: 1;"/>
+            <Search Placeholder="搜索插件名称、ID、描述..." @bind-Value="searchText" OnSearch="@(() => FilterPlugins())"
+                    Style="flex: 1;"/>
             <AutoComplete @bind-Value="authorSearchText"
                           Options="authorOptions"
                           Placeholder="作者筛选"
                           Style="flex: 1; min-width: 180px;"
                           AllowClear="true"
                           AllowFilter="true"
-                          OnSelectionChange="@((e) => { authorSearchText = e?.Value?.ToString() ?? ""; FilterPlugins(); })"
-                          OnInput="@((e) => { authorSearchText = e?.Value?.ToString() ?? ""; FilterPlugins(); })">
+                          OnSelectionChange="@((e) => {
+                                                 authorSearchText = e?.Value?.ToString() ?? "";
+                                                 FilterPlugins();
+                                             })"
+                          OnInput="@((e) => {
+                                       authorSearchText = e?.Value?.ToString() ?? "";
+                                       FilterPlugins();
+                                   })">
             </AutoComplete>
         </div>
         @if (allTags.Length > 0)
         {
             <div style="display: flex; gap: 6px; align-items: center; margin-top: 8px; flex-wrap: wrap;">
-                <div style="display: flex; flex-wrap: wrap; gap: 6px; max-height: 56px; overflow: hidden; flex: 1; min-width: 0;">
+                <div
+                    style="display: flex; flex-wrap: wrap; gap: 6px; max-height: 56px; overflow: hidden; flex: 1; min-width: 0;">
                     @foreach (var tag in allTags)
                     {
                         <Tag Color="@GetTagColor(tag)"
@@ -86,7 +99,9 @@
                 </div>
                 <Popover Trigger="@(new[] { AntDesign.Trigger.Click })" Placement="@Placement.BottomRight">
                     <ChildContent>
-                        <Tag Style="cursor: pointer; flex-shrink: 0;"><Icon Type="@IconType.Outline.Search" /></Tag>
+                        <Tag Style="cursor: pointer; flex-shrink: 0;">
+                            <Icon Type="@IconType.Outline.Search"/>
+                        </Tag>
                     </ChildContent>
                     <ContentTemplate>
                         <div style="width: 200px;">
@@ -110,7 +125,8 @@
 
     @* 插件列表 *@
     <div style="flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0;">
-        <div id="pluginMarketContainer" style="flex: 1; overflow: hidden; padding: 12px; min-width: 0; display: flex; align-items: center; justify-content: center;">
+        <div id="pluginMarketContainer"
+             style="flex: 1; overflow: hidden; padding: 12px; min-width: 0; display: flex; align-items: center; justify-content: center;">
             @if (isLoading)
             {
                 <Spin Tip="加载中..." Style="display: flex; justify-content: center; padding: 48px;"/>
@@ -135,10 +151,12 @@
             }
             else
             {
-                <div id="pluginMarketGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; padding: 4px; justify-content: center; align-content: center; width: 100%;">
+                <div id="pluginMarketGrid"
+                     style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; padding: 4px; justify-content: center; align-content: center; width: 100%;">
                     @foreach (var plugin in pagedPlugins)
                     {
-                        <PluginCardUI Plugin="plugin" OnClick="@(() => ShowDetail(plugin))" OnInstalled="@(() => RefreshLocal(resetPage: false))"/>
+                        <PluginCardUI Plugin="plugin" OnClick="@(() => ShowDetail(plugin))"
+                                      OnInstalled="@(() => RefreshLocal(resetPage: false))"/>
                     }
                 </div>
             }
@@ -170,52 +188,61 @@
 </Modal>
 
 @* 一键升级弹窗 *@
-<Modal Title="一键升级"
-       Visible="showUpgradeModal"
-       OnCancel="@(() => showUpgradeModal = false)"
-       Footer="null"
-       Width="520"
-       Centered="true">
-    <div style="max-height: 400px; overflow-y: auto;">
-        @foreach (var item in upgradeList)
-        {
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
-                <div style="flex: 1; min-width: 0;">
-                    <div style="font-weight: 600; font-size: 14px;">@item.plugin.Name</div>
-                    <div style="font-size: 12px; color: #999;">
-                        v@(item.oldVersion) → v@(item.newVersion)
-                    </div>
-                </div>
-                <Button Size="@ButtonSize.Small" Loading="item.isOperating"
-                        OnClick="@(() => UpgradeSingle(item))">
-                    @(item.isOperating && isRollingBack ? "回滚中" : "升级")
-                </Button>
-            </div>
+<PluginUpgradeModal @bind-Visible="showUpgradeModal"
+                    UpgradeList="upgradeList"
+                    OnUpgradeComplete="EventCallback.Factory.Create(this, () => RefreshLocal())">
+    <HeaderContent>
+        <div style="font-size: 12px; color: rgba(0,0,0,0.45); margin-bottom: 12px; line-height: 1.8;">
+            一键升级不仅可以批量配置插件环境，还可以避免插件版本冲突，实现更快更安全的升级，<b style="color: #1890ff;">建议总是使用一键升级来升级插件</b>。<Checkbox @bind-Value="hideUpgradeAnimation" OnChange="@OnHideAnimationChanged" Style="margin-left: 4px;">我知道了</Checkbox>
+        </div>
+    </HeaderContent>
+</PluginUpgradeModal>
+
+<style>
+    .upgrade-btn {
+        color: #52c41a !important;
+        animation: upgrade-bounce 1s ease-in-out infinite;
+        transform-origin: center bottom;
+    }
+
+    .upgrade-btn:hover {
+        animation: none;
+        transform: scale(1.1);
+    }
+
+    .upgrade-paused {
+        animation: none !important;
+    }
+
+    @@keyframes upgrade-bounce {
+        0%, 100% {
+            transform: rotate(0deg) scale(1);
         }
-        @if (upgradeList.Count == 0)
-        {
-            <Empty Description="@("暂无可用升级")"/>
+        20% {
+            transform: rotate(-15deg) scale(1.25);
         }
-    </div>
-    <div style="display: flex; justify-content: flex-end; gap: 8px; padding-top: 12px; border-top: 1px solid #f0f0f0;">
-        <Button OnClick="@(() => showUpgradeModal = false)">取消</Button>
-        <Button Type="@ButtonType.Primary" Loading="isUpgrading" OnClick="UpgradeAll">
-            @(isUpgrading && isRollingBack ? "回滚中" : "全部升级")
-        </Button>
-    </div>
-</Modal>
+        40% {
+            transform: rotate(12deg) scale(1.15);
+        }
+        60% {
+            transform: rotate(-10deg) scale(1.2);
+        }
+        80% {
+            transform: rotate(8deg) scale(1.1);
+        }
+    }
+</style>
 
 @code {
     string viewMode = "all";
     string searchText = "";
     string sourceUrl = "";
     string authorSearchText = "";
-    Dictionary<string, bool> selectedTags = []; // true=include, false=exclude
+    Dictionary<string, bool> selectedTags = [];// true=include, false=exclude
     string tagSearchText = "";
     bool isLoading;
     bool isSaving;
-    bool isUpgrading;
-    bool isRollingBack;
+    bool hideUpgradeAnimation;
     int upgradableCount;
     int currentPage = 1;
     int pageSize = 12;
@@ -228,15 +255,7 @@
     Exception? operException;
 
     bool showUpgradeModal;
-    List<UpgradeItem> upgradeList = [];
-
-    class UpgradeItem
-    {
-        public Plugin plugin { get; set; } = null!;
-        public string newVersion { get; set; } = "";
-        public string oldVersion { get; set; } = "";
-        public bool isOperating;
-    }
+    List<PluginUpgradeModal.UpgradeItem> upgradeList = [];
 
     string[] allTags = [];
     string[] authorOptions = [];
@@ -249,7 +268,13 @@
     {
         PluginMarketService.OnInstalled += OnPluginsChanged;
         sourceUrl = PluginMarketService.SourceUrl;
+        hideUpgradeAnimation = StorageSystem.GetObject("Settings/PluginMarketViewConfig", new UpgradeAnimationConfig())?.HideUpgradeAnimation ?? false;
         RefreshLocal();
+    }
+
+    class UpgradeAnimationConfig
+    {
+        public bool HideUpgradeAnimation { get; set; }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -297,7 +322,7 @@
             if (dimensions.Width > 0 && dimensions.Height > 0)
                 ApplyPageSize(dimensions.Width, dimensions.Height);
         }
-        catch { }
+        catch {}
     }
 
     [JSInvokable]
@@ -369,8 +394,7 @@
     {
         upgradeList = allPlugins
             .Where(p => PluginMarketService.HasUpdate(p))
-            .Select(p => new UpgradeItem
-            {
+            .Select(p => new PluginUpgradeModal.UpgradeItem {
                 plugin = p,
                 newVersion = PluginMarketService.GetLatestVersion(p) ?? "",
                 oldVersion = PluginMarketService.GetInstalledVersion(p.Id) ?? ""
@@ -378,80 +402,6 @@
             .Where(x => !string.IsNullOrEmpty(x.newVersion) && !string.IsNullOrEmpty(x.oldVersion))
             .ToList();
         showUpgradeModal = true;
-    }
-
-    async Task UpgradeSingle(UpgradeItem item)
-    {
-        item.isOperating = true;
-        StateHasChanged();
-
-        try
-        {
-            await PluginMarketService.InstallPlugin(item.plugin, item.newVersion);
-            MessageService.Success($"[{item.plugin.Name}] 升级成功");
-            upgradeList.Remove(item);
-            RefreshLocal();
-        }
-        catch (Exception ex)
-        {
-            isRollingBack = true;
-            StateHasChanged();
-
-            try
-            {
-                await PluginMarketService.InstallPlugin(item.plugin, item.oldVersion);
-                MessageService.Warning($"[{item.plugin.Name}] 升级失败，已回退到 v{item.oldVersion}");
-            }
-            catch { }
-            operException = ex;
-            isRollingBack = false;
-        }
-
-        item.isOperating = false;
-        StateHasChanged();
-    }
-
-    async Task UpgradeAll()
-    {
-        var toUpgrade = upgradeList
-            .Where(x => !x.isOperating)
-            .ToList();
-
-        if (toUpgrade.Count == 0) return;
-
-        isUpgrading = true;
-        StateHasChanged();
-
-        try
-        {
-            await PluginMarketService.InstallPlugins(toUpgrade.Select(x => (x.plugin, x.newVersion)));
-            MessageService.Success($"已升级 {toUpgrade.Count} 个插件");
-            upgradeList.Clear();
-            showUpgradeModal = false;
-            RefreshLocal();
-        }
-        catch (Exception ex)
-        {
-            operException = ex;
-            isRollingBack = true;
-            StateHasChanged();
-
-            try
-            {
-                await PluginMarketService.InstallPlugins(toUpgrade.Select(x => (x.plugin, x.oldVersion)));
-                MessageService.Warning($"已回滚 {toUpgrade.Count} 个插件");
-                RefreshLocal();
-            }
-            catch (Exception rollbackEx)
-            {
-                operException = rollbackEx;
-            }
-
-            isRollingBack = false;
-        }
-
-        isUpgrading = false;
-        StateHasChanged();
     }
 
     void ShowDetail(Plugin plugin)
@@ -523,11 +473,11 @@
     void ToggleTag(string tag)
     {
         if (!selectedTags.TryGetValue(tag, out var mode))
-            selectedTags[tag] = true;      // not selected → include
+            selectedTags[tag] = true;// not selected → include
         else if (mode)
-            selectedTags[tag] = false;     // include → exclude
+            selectedTags[tag] = false;// include → exclude
         else
-            selectedTags.Remove(tag);      // exclude → not selected
+            selectedTags.Remove(tag);// exclude → not selected
         FilterPlugins();
     }
 
@@ -553,7 +503,11 @@
     void RefreshLocal(bool resetPage = true)
     {
         PluginMarketService.RefreshLocalPlugins();
-        var onlinePlugins = PluginMarketService.GetAllPlugins();
+        var onlinePlugins = PluginMarketService.GetAllPlugins().OrderByDescending(plugin => {
+            if (plugin.Releases != null && plugin.Releases.Count > 0 && DateTime.TryParse(plugin.Releases.First().Value.Date, out DateTime time))
+                return time;
+            return DateTime.MinValue;
+        });
         var installed = PluginMarketService.GetInstalledPlugins();
 
         if (viewMode == "installed")
@@ -564,7 +518,7 @@
         }
         else
         {
-            allPlugins = onlinePlugins;
+            allPlugins = onlinePlugins.ToArray();
         }
 
         allTags = allPlugins
@@ -591,6 +545,13 @@
         StateHasChanged();
     }
 
+    void OnHideAnimationChanged(bool checkedValue)
+    {
+        var config = StorageSystem.GetObject("Settings/PluginMarketViewConfig", new UpgradeAnimationConfig()) ?? new UpgradeAnimationConfig();
+        config.HideUpgradeAnimation = checkedValue;
+        StorageSystem.SetObject("Settings/PluginMarketViewConfig", config);
+    }
+
     async Task SaveSource()
     {
         if (string.IsNullOrWhiteSpace(sourceUrl))
@@ -607,7 +568,7 @@
 
         try
         {
-            PluginMarketService.SetSource(sourceUrl);
+            PluginMarketService.SourceUrl = sourceUrl;
             MessageService.Success("插件源已更新，正在重新拉取...");
             await PluginMarketService.FetchOnlinePluginsAsync();
             RefreshLocal();
@@ -647,7 +608,7 @@
         {
             await JsRuntime.InvokeVoidAsync("unwatchPluginMarketResize");
         }
-        catch { }
+        catch {}
         dotnetRef?.Dispose();
     }
 }

@@ -2,7 +2,6 @@
 @using System.Text
 @using Alife.Platform
 @inject IJSRuntime JsRuntime
-@implements IAsyncDisposable
 
 <div class="log-floating-button" @onclick="ToggleLog">
     <Icon Type="@IconType.Outline.FileText" Style="font-size: 20px; color: white;"/>
@@ -93,8 +92,7 @@
 
     const int MaxLogCount = 5000;
     const string LogFileName = "alife.log";
-    static readonly Dictionary<int, string> ForegroundColors = new()
-    {
+    static readonly Dictionary<int, string> ForegroundColors = new() {
         [30] = "#000000", [31] = "#cd3131", [32] = "#0dbc79", [33] = "#e5e510",
         [34] = "#2472c8", [35] = "#bc3fbc", [36] = "#11a8cd", [37] = "#e5e5e5",
         [90] = "#666666", [91] = "#f14c4c", [92] = "#23d18b", [93] = "#f5f543",
@@ -102,26 +100,20 @@
     };
 
     readonly List<LogEntry> logs = new();
-    readonly object syncLock = new();
+    readonly Lock syncLock = new();
+    readonly string logFilePath = Path.Combine(AlifePath.TempFolderPath, LogFileName);
     StreamWriter? logFileWriter;
-    readonly string logFilePath;
 
     bool visible;
-    bool autoScroll = false;
+    bool autoScroll;
     IReadOnlyList<LogEntry> entries = Array.Empty<LogEntry>();
     ElementReference container;
     System.Timers.Timer? refreshTimer;
 
-    public LogOverlay()
+    protected override void OnInitialized()
     {
-        logFilePath = Path.Combine(AlifePath.TempFolderPath, LogFileName);
         Directory.CreateDirectory(Path.GetDirectoryName(logFilePath)!);
         logFileWriter = new StreamWriter(logFilePath, false, Encoding.UTF8) { AutoFlush = true };
-        Install();
-    }
-
-    void Install()
-    {
         Console.SetOut(new CapturingWriter("INF", Console.Out, this));
         Console.SetError(new CapturingWriter("ERR", Console.Error, this));
     }
@@ -276,14 +268,6 @@
         catch {}
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        StopRefreshTimer();
-        logFileWriter?.Dispose();
-        logFileWriter = null;
-        await Task.CompletedTask;
-    }
-
     sealed class CapturingWriter : TextWriter
     {
         readonly string level;
@@ -314,7 +298,11 @@
             else line.Append(c);
         }
 
-        public override void Write(char value) { inner.Write(value); Append(value); }
+        public override void Write(char value)
+        {
+            inner.Write(value);
+            Append(value);
+        }
         public override void Write(char[] buffer, int index, int count)
         {
             inner.Write(buffer, index, count);
@@ -332,9 +320,15 @@
             if (value != null) line.Append(value);
             FlushLine();
         }
-        public override void WriteLine() { inner.WriteLine(); FlushLine(); }
+        public override void WriteLine()
+        {
+            inner.WriteLine();
+            FlushLine();
+        }
     }
 
     readonly record struct AnsiSegment(string Text, string CssColor);
+
     readonly record struct LogEntry(DateTime Timestamp, string Level, string Message);
+
 }

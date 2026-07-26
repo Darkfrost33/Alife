@@ -64,7 +64,7 @@
        OnOk="@OnConfirmCreate"
        OnCancel="@(() => isCreating = false)">
     <AntDesign.Text>请输入角色名称：</AntDesign.Text>
-    <Input @bind-Value="@newCharacterName" Placeholder="如：真央"/>
+    <Input @bind-Value="@newCharacterName"/>
     <AntDesign.Text Type="@TextElementType.Secondary" Style="font-size: 12px; margin-top: 8px; display: block;">
         注意：非法字符将被自动替换，建议使用中文或英文。
     </AntDesign.Text>
@@ -128,7 +128,8 @@
     void OnConfirmCreate()
     {
         if (string.IsNullOrWhiteSpace(newCharacterName)) return;
-        CharacterSystem.CreateCharacter(newCharacterName);
+        Character character = CharacterSystem.CreateCharacter(newCharacterName);
+        CharacterSystem.SaveCharacter(character);
         isCreating = false;
         Navigation.NavigateTo($"/agent/{newCharacterName}");
         newCharacterName = "";

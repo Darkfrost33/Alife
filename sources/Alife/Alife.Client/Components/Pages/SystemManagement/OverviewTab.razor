@@ -1,5 +1,8 @@
 @using Alife.Platform
 @using Alife.Components.Services
+@using ElectronNET.API
+@using ElectronNET.API.Entities
+@using UpdateInfo = Alife.Components.Services.UpdateInfo
 @inject INotificationService NotificationService
 @inject UpdateService UpdateService
 
@@ -183,7 +186,7 @@
 
     async Task OnPickStorageFolderAsync()
     {
-        string? result = await Platform.AlifePlatform.PickFolderAsync();
+        string? result = await PickFolderAsync();
         if (string.IsNullOrWhiteSpace(result) is false)
         {
             storageFolderPath = result;
@@ -194,12 +197,23 @@
 
     async Task OnPickRuntimeFolderAsync()
     {
-        string? result = await Platform.AlifePlatform.PickFolderAsync();
+        string? result = await PickFolderAsync();
         if (string.IsNullOrWhiteSpace(result) is false)
         {
             runtimeFolderPath = result;
             Platform.AlifePath.SetRuntimeFolderPath(runtimeFolderPath);
             _ = NotificationService.Success(new NotificationConfig { Message = "运行时目录已保存！重启后生效喵~" });
         }
+    }
+
+    static async Task<string?> PickFolderAsync()
+    {
+        var browserWindow = Electron.WindowManager.BrowserWindows.First();
+        var options = new OpenDialogOptions {
+            Title = "请选择文件夹",
+            Properties = new[] { OpenDialogProperty.openDirectory }
+        };
+        string[] result = await Electron.Dialog.ShowOpenDialogAsync(browserWindow, options);
+        return result.FirstOrDefault();
     }
 }

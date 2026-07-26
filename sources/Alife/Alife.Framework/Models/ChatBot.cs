@@ -25,6 +25,8 @@ public class ChatBot : IAsyncDisposable
     public event Action<string>? ReasoningReceived;//思考消息接收到
     public event Action<string, string>? ChatFinished;//消息结束 参数为(输入消息,输出消息)
     public event Action? ChatOver;//消息结束
+    public event Action? ChatRequesting;//对话开始（信号量首次被锁住）
+    public event Action? ChatReleased;//对话结束（信号量完全解锁）
     public event Action<ChatMessageContent>? ChatHistoryAdd;
     public event Action<Exception>? ChatExceptionThrow;
     public event Action<ChatTokenUsage>? TokenUsed;
@@ -32,11 +34,13 @@ public class ChatBot : IAsyncDisposable
     public ChatCompletionAgent ChatCompletionAgent => chatCompletionAgent;
     public ChatHistoryAgentThread ChatHistoryAgentThread => chatHistoryAgentThread;
     public ChatHistory ChatHistory => chatHistoryAgentThread.ChatHistory;
-    public bool IsChatting => chatSemaphore.CurrentCount == 0;
+    public bool IsChatting => chatRequestCount != 0;
     public CancellationTokenSource ChatBreakTokenSource => chatBreakSource;
 
     public async Task RequestChatAsync(CancellationToken cancellationToken = default, Func<string>? reason = null)
     {
+        if (Interlocked.Increment(ref chatRequestCount) == 1)
+            ChatRequesting?.Invoke();
         await chatSemaphore.WaitAsync(cancellationToken);
         ChatOccupiedReason = reason;
     }
@@ -45,6 +49,8 @@ public class ChatBot : IAsyncDisposable
     {
         ChatOccupiedReason = null;
         chatSemaphore.Release();
+        if (Interlocked.Decrement(ref chatRequestCount) == 0)
+            ChatReleased?.Invoke();
     }
 
     public async IAsyncEnumerable<string> ChatStreamingAsync(string message, AuthorRole? role = null)
@@ -210,6 +216,7 @@ public class ChatBot : IAsyncDisposable
     readonly ConcurrentQueue<string> messageCache;
     readonly SemaphoreSlim chatSemaphore;
     CancellationTokenSource chatBreakSource = new();
+    int chatRequestCount;
 
     int lastContentIndex;
 

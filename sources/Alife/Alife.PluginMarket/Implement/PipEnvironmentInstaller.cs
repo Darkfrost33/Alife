@@ -2,31 +2,22 @@ using Alife.Platform;
 
 namespace Alife.PluginMarket;
 
-public class PipEnvironmentInstaller : IEnvironmentInstaller
+public class PipEnvironmentInstaller(string packageListOutput) : IEnvironmentInstaller
 {
-    static bool _setuptoolsReady;
+    static bool setuptoolsReady;
 
     public void InstallEnvironment(IEnumerable<KeyValuePair<string, string>> environment)
     {
-        if (!_setuptoolsReady)
+        if (!setuptoolsReady)
         {
             AlifePlatform.Command("python", "-m pip install setuptools wheel --quiet");
-            _setuptoolsReady = true;
+            setuptoolsReady = true;
         }
 
-        string tempFile = Path.Combine(Path.GetTempPath(), "PipEnvironmentInstaller_requirements.txt");
         File.WriteAllLines(
-            tempFile,
+            packageListOutput,
             environment.Select(dep => $"{dep.Key}{dep.Value}")
         );
-
-        try
-        {
-            AlifePlatform.Command("python", $"-m pip install -r {tempFile}");
-        }
-        finally
-        {
-            File.Delete(tempFile);
-        }
+        AlifePlatform.Command("python", $"-m pip install -r \"{packageListOutput}\"");
     }
 }

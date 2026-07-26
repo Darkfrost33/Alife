@@ -8,6 +8,9 @@
     <p class="step-desc">
         环境依赖大多需要从外网下载。为了让国内用户也能用，就需要配置镜像。</p>
 
+    <Alert ShowIcon="true" Type="AlertType.Info" Style="margin: 12px;"
+           Message="几乎所有的环境都得走外网下，虽然我增加了镜像功能，但很不稳定，尤其是Github。最好还是自己搞个加速器，Github作为学术网站，有很多合法加速器可以免费加速。再不济，就去群里下文件吧。"></Alert>
+    
     <div class="mirror-list">
         @foreach (var mirror in AvailableMirrors)
         {
@@ -57,8 +60,8 @@
     </div>
 
     <Alert ShowIcon="true" Type="AlertType.Warning" Style="margin-top: 12px;"
-           Message="必须配置镜像或自备工具，如果失效，后续环境安装很可能失败"></Alert>
-
+           Message="必须配置镜像或自备工具，如果失效，后续环境安装很可能失败！"></Alert>
+    
     <div class="step-nav">
         <Button Size="@ButtonSize.Large" OnClick="@OnPrev">
             <Icon Type="@IconType.Outline.ArrowLeft"/>
@@ -148,9 +151,9 @@
         else
         {
             foreach (var mirror in AvailableMirrors)
-                enabledMirrors[mirror.Id] = true;
+                enabledMirrors[mirror.Id] = mirror.Recommended;
         }
-        
+
         static bool IsMirrorConfigured(MirrorItem mirror)
         {
             foreach (var kv in mirror.UrlMappings)
@@ -166,7 +169,7 @@
             return true;
         }
     }
-    
+
     void ApplyMirrors()
     {
         var urlMap = new Dictionary<string, string>();
