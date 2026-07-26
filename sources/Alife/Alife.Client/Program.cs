@@ -53,7 +53,12 @@ public static class Program
         Console.InputEncoding = Encoding.UTF8;
 
         //业务功能注册
-        var builder = WebApplication.CreateBuilder(args);
+        // ContentRoot 必须一开始就指向输出目录，否则 UseElectron 改 content root 会抛 NotSupportedException
+        //（dotnet run 默认 content root 是项目目录，exe 输出在 Outputs\...）
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions {
+            Args = args,
+            ContentRootPath = AppContext.BaseDirectory,
+        });
         {
             //前端框架
             builder.Services.AddRazorComponents().AddInteractiveServerComponents();

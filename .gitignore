@@ -19,3 +19,7 @@
 
 obj/
 bin/
+
+# DeskPet 运行时调试日志
+pet.log
+**/pet.log
