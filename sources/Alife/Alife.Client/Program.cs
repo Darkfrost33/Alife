@@ -39,6 +39,7 @@ public static class Program
         Console.WriteLine(typeof(Function.AIModelUtility.AIModelUtility).Assembly);
         Console.WriteLine(typeof(Function.Auditory.SenseVoice.SenseVoiceAuditoryModel).Assembly);
         Console.WriteLine(typeof(Function.Speech.EdgeTTS.EdgeSpeechModel).Assembly);
+        Console.WriteLine(typeof(Function.Speech.FishAudio.FishAudioSpeechModel).Assembly);
         Console.WriteLine(typeof(Function.Speech.Genie.GenieSpeechModel).Assembly);
         Console.WriteLine(typeof(Function.Speech.VITS.VitsSpeechModel).Assembly);
         Console.WriteLine(typeof(Function.Vision.MiniCPM.MiniCPMVisionModel).Assembly);

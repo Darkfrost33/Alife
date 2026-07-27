@@ -50,6 +50,7 @@
     <Project Path="Sources/Alife.Function/Alife.Function.AIModelUtility/Alife.Function.AIModelUtility.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Auditory.SenseVoice/Alife.Function.Auditory.SenseVoice.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Speech.EdgeTTS/Alife.Function.Speech.EdgeTTS.csproj" />
+    <Project Path="Sources/Alife.Function/Alife.Function.Speech.FishAudio/Alife.Function.Speech.FishAudio.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Speech.Genie/Alife.Function.Speech.Genie.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Speech.VITS/Alife.Function.Speech.VITS.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Vision.MiniCPM/Alife.Function.Vision.MiniCPM.csproj" />
