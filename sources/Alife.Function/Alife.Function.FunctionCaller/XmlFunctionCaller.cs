@@ -39,6 +39,7 @@ public class XmlFunctionCaller(
     IConfigurable<XmlFunctionCallerConfig>
 {
     public event Func<Task>? ChatCalled;
+    public event Action<XmlStreamingContent>? ContentStreaming;
     public XmlFunctionCallerConfig Configuration { get; set; } = null!;
     public bool IsIdle => executor.IsInactive;
 
@@ -128,6 +129,7 @@ public class XmlFunctionCaller(
         parser.Error += OnError;
         executor.Error += OnError;
         executor.Handling += OnHandling;
+        executor.ContentStreaming += content => ContentStreaming?.Invoke(content);
 
         //AI输入回调
         ChatBot.ChatSent += OnChatSent;

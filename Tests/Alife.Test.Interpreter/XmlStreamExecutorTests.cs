@@ -95,4 +95,28 @@ public class XmlStreamExecutorTests
 
         Assert.That(handler.Logs, Has.Count.AtLeast(4));
     }
+
+    [Test]
+    public async Task StreamingContent_IsRaisedBeforeGlobalSentenceBreak()
+    {
+        TestHandler handler = new TestHandler();
+        XmlHandlerTable table = new XmlHandlerTable();
+        table.Register(new XmlHandler(handler));
+
+        XmlStreamParser parser = new XmlStreamParser();
+        await using XmlStreamExecutor executor = new XmlStreamExecutor(parser, table, ["。"], 23);
+        List<char> streamed = new();
+        executor.ContentStreaming += content =>
+        {
+            if (content.CallChain.Contains("test"))
+                streamed.Add(content.Character);
+        };
+
+        executor.Feed("<test>短句。</test>");
+        executor.Flush();
+        await executor.WaitToInactive();
+
+        Assert.That(new string(streamed.ToArray()), Is.EqualTo("短句。"));
+        Assert.That(handler.Logs, Has.Member("test:Content:短句。"));
+    }
 }

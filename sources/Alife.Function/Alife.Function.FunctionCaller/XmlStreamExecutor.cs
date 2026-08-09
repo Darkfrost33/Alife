@@ -17,6 +17,13 @@ public class XmlExecutorContext : XmlContext
     public string FullContent => AboveContent + Content;
 }
 
+/// <summary>
+/// XML 解析器解码后的原始内容字符。用于必须在全局分句前消费内容的实时功能。
+/// </summary>
+public readonly record struct XmlStreamingContent(
+    IReadOnlyList<string> CallChain,
+    char Character);
+
 public class XmlStreamExecutor : IAsyncDisposable
 {
     /// <summary>
@@ -27,6 +34,7 @@ public class XmlStreamExecutor : IAsyncDisposable
     /// 接收意图调用的函数（函数可能不存在）
     /// </summary>
     public event Action<string, XmlContext>? Handling;
+    public event Action<XmlStreamingContent>? ContentStreaming;
 
     public bool IsInactive =>
         commandChannel.Reader.TryPeek(out _) == false &&
@@ -186,6 +194,22 @@ public class XmlStreamExecutor : IAsyncDisposable
     Task OnContentGot(char ch)
     {
         contentBuffer.Append(ch);
+
+        if (ContentStreaming != null)
+        {
+            XmlStreamingContent streamingContent = new(parser.TagStack.ToArray(), ch);
+            foreach (Action<XmlStreamingContent> subscriber in ContentStreaming.GetInvocationList())
+            {
+                try
+                {
+                    subscriber.Invoke(streamingContent);
+                }
+                catch (Exception e)
+                {
+                    Error?.Invoke(parser.TagStack.LastOrDefault() ?? "stream", e);
+                }
+            }
+        }
 
         if (contentBuffer.Length >= minBreakingLength)
         {

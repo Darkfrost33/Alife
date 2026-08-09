@@ -1,7 +1,7 @@
 @namespace Alife.Function.Speech
 @using AntDesign
 @using Alife.Framework
-@inherits ModuleUIBase<SpeechService>
+@inherits ModuleUIBase<SpeechService, SpeechServiceConfig>
 
 <div style="background: #fafafa; padding: 24px; border-radius: 12px; border: 1px solid #f0f0f0;">
     <Card Size="CardSize.Small" Title="语音合成 (TTS)" Style="border-radius: 8px;">
@@ -17,5 +17,22 @@
                 }
             </div>
         </Flex>
+
+        <Form TModel="SpeechServiceConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
+            <FormItem Label="语音模式">
+                <Select TItemValue="SpeechStreamingMode" TItem="SpeechStreamingMode"
+                        @bind-Value="@Configuration.StreamingMode" Style="width: 100%;">
+                    <SelectOption TItemValue="SpeechStreamingMode" TItem="SpeechStreamingMode"
+                                  Value="@SpeechStreamingMode.Auto" Label="自动（推荐）"/>
+                    <SelectOption TItemValue="SpeechStreamingMode" TItem="SpeechStreamingMode"
+                                  Value="@SpeechStreamingMode.BufferedFile" Label="文件队列"/>
+                    <SelectOption TItemValue="SpeechStreamingMode" TItem="SpeechStreamingMode"
+                                  Value="@SpeechStreamingMode.RealtimeStream" Label="实时串流"/>
+                </Select>
+                <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
+                    自动模式会优先使用模型的实时串流能力，连接失败时本轮降级为文件模式。
+                </Text>
+            </FormItem>
+        </Form>
     </Card>
 </div>

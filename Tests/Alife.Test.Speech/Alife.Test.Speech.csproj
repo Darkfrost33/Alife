@@ -22,6 +22,7 @@
     <ItemGroup>
         <ProjectReference Include="..\..\Sources\Alife\Alife.Foundation\Alife.Foundation.csproj" />
         <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.Speech\Alife.Function.Speech.csproj" />
+        <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.Speech.FishAudio\Alife.Function.Speech.FishAudio.csproj" />
         <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.Speech.VITS\Alife.Function.Speech.VITS.csproj" />
     </ItemGroup>
 

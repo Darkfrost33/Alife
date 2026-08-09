@@ -7,34 +7,27 @@
 
     <Alert Type="@AlertType.Info"
            Message="API Key 可在 Fish Audio 控制台创建。配置留空时将读取 FISH_API_KEY 环境变量。"
-           ShowIcon="true"
-           Style="margin-bottom: 16px;"/>
+           ShowIcon="true" Style="margin-bottom: 16px;"/>
 
     <Form TModel="FishAudioSpeechModelConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
         <FormItem Label="API 地址">
             <Input @bind-Value="@Configuration.BaseUrl"/>
         </FormItem>
-
+        <FormItem Label="WebSocket 地址">
+            <Input @bind-Value="@Configuration.StreamingUrl"/>
+        </FormItem>
         <FormItem Label="API Key">
             <InputPassword @bind-Value="@Configuration.ApiKey"
                            Placeholder="留空则使用 FISH_API_KEY 环境变量"/>
         </FormItem>
-
         <FormItem Label="模型">
-            <Select TItemValue="string" TItem="string"
-                    @bind-Value="@Configuration.Model"
-                    Style="width: 100%;">
-                <SelectOption TItemValue="string" TItem="string"
-                              Value="@("s2.1-pro-free")" Label="S2.1 Pro Free"/>
-                <SelectOption TItemValue="string" TItem="string"
-                              Value="@("s2.1-pro")" Label="S2.1 Pro"/>
-                <SelectOption TItemValue="string" TItem="string"
-                              Value="@("s2-pro")" Label="S2 Pro"/>
-                <SelectOption TItemValue="string" TItem="string"
-                              Value="@("s1")" Label="S1"/>
+            <Select TItemValue="string" TItem="string" @bind-Value="@Configuration.Model" Style="width: 100%;">
+                <SelectOption TItemValue="string" TItem="string" Value="@("s2.1-pro-free")" Label="S2.1 Pro Free"/>
+                <SelectOption TItemValue="string" TItem="string" Value="@("s2.1-pro")" Label="S2.1 Pro"/>
+                <SelectOption TItemValue="string" TItem="string" Value="@("s2-pro")" Label="S2 Pro"/>
+                <SelectOption TItemValue="string" TItem="string" Value="@("s1")" Label="S1"/>
             </Select>
         </FormItem>
-
         <FormItem Label="音色模型 ID">
             <Input @bind-Value="@Configuration.ReferenceId"
                    Placeholder="例如: 802e3bc2b27e49c2995d23ef70e6ac89"/>
@@ -42,43 +35,42 @@
                 填写音色详情页的 Model ID（字母数字/_/-），不要填中文名称。可留空使用默认音色。
             </Text>
         </FormItem>
-
         <GridRow Gutter="16">
             <GridCol Span="8">
-                <FormItem Label="输出格式">
-                    <Select TItemValue="string" TItem="string"
-                            @bind-Value="@Configuration.Format"
-                            Style="width: 100%;">
-                        <SelectOption TItemValue="string" TItem="string"
-                                      Value="@("mp3")" Label="MP3"/>
-                        <SelectOption TItemValue="string" TItem="string"
-                                      Value="@("wav")" Label="WAV"/>
+                <FormItem Label="文件输出格式">
+                    <Select TItemValue="string" TItem="string" @bind-Value="@Configuration.Format" Style="width: 100%;">
+                        <SelectOption TItemValue="string" TItem="string" Value="@("mp3")" Label="MP3"/>
+                        <SelectOption TItemValue="string" TItem="string" Value="@("wav")" Label="WAV"/>
                     </Select>
                 </FormItem>
             </GridCol>
             <GridCol Span="8">
                 <FormItem Label="语速">
-                    <InputNumber TValue="double"
-                                 @bind-Value="@Configuration.Speed"
-                                 Min="0.5"
-                                 Max="2.0"
-                                 Step="0.1"
-                                 Style="width: 100%;"/>
+                    <InputNumber TValue="double" @bind-Value="@Configuration.Speed"
+                                 Min="0.5" Max="2.0" Step="0.1" Style="width: 100%;"/>
                 </FormItem>
             </GridCol>
             <GridCol Span="8">
                 <FormItem Label="音量 (dB)">
-                    <InputNumber TValue="double"
-                                 @bind-Value="@Configuration.Volume"
-                                 Min="-20"
-                                 Max="20"
-                                 Step="1"
-                                 Style="width: 100%;"/>
+                    <InputNumber TValue="double" @bind-Value="@Configuration.Volume"
+                                 Min="-20" Max="20" Step="1" Style="width: 100%;"/>
                     <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
                         0 为默认，正数更响，负数更轻。
                     </Text>
                 </FormItem>
             </GridCol>
         </GridRow>
+        <FormItem Label="实时延迟模式">
+            <Select TItemValue="string" TItem="string" @bind-Value="@Configuration.StreamingLatency" Style="width: 100%;">
+                <SelectOption TItemValue="string" TItem="string" Value="@("balanced")" Label="Balanced（推荐）"/>
+                <SelectOption TItemValue="string" TItem="string" Value="@("normal")" Label="Normal"/>
+            </Select>
+        </FormItem>
+        <FormItem Label="Fish 延迟诊断">
+            <Switch @bind-Value="@Configuration.EnableLatencyDiagnostics"/>
+            <Text Type="TextElementType.Secondary" Style="font-size: 11px; margin-left: 8px;">
+                开启后在左下角运行日志中记录 WebSocket 建连、Flush 到首音频及总首音延迟。
+            </Text>
+        </FormItem>
     </Form>
 </div>
