@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/Plugins/">
+    <Project Path="Plugins/Alife.Function.DeskPet.Layout/Alife.Function.DeskPet.Layout.csproj" />
+  </Folder>
   <Folder Name="/Demos/">
     <Project Path="Demos/Alife.Demo.Browser/Alife.Demo.Browser.csproj" />
     <Project Path="Demos/Alife.Demo.DeskPet/Alife.Demo.DeskPet.csproj" />
@@ -36,6 +39,7 @@
     <Project Path="Sources/Alife.DeskPet/Alife.DeskPet.Protocol/Alife.DeskPet.Protocol.csproj" />
   </Folder>
   <Folder Name="/Sources/Alife.Function/Environment/">
+    <Project Path="Sources/Alife.Function/Alife.Function.ChatRoom/Alife.Function.ChatRoom.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Memory/Alife.Function.Memory.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.MessageFilter/Alife.Function.MessageFilter.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Developer/Alife.Function.Developer.csproj" />
@@ -65,6 +69,7 @@
     <Project Path="Sources/Alife.Function/Alife.Function.Language.OpenAI/Alife.Function.Language.OpenAI.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Auditory.SenseVoice/Alife.Function.Auditory.SenseVoice.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Speech.EdgeTTS/Alife.Function.Speech.EdgeTTS.csproj" />
+    <Project Path="Sources/Alife.Function/Alife.Function.Speech.FishAudio/Alife.Function.Speech.FishAudio.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Speech.Genie/Alife.Function.Speech.Genie.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Speech.VITS/Alife.Function.Speech.VITS.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Vision.MiniCPM/Alife.Function.Vision.MiniCPM.csproj" />

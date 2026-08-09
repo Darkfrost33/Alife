@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Alife.Framework;
@@ -86,13 +88,56 @@ public class ChatActivitySystem
     /// </summary>
     public async Task Deactivate(Character character)
     {
-        if (!activities.TryGetValue(character.Name, out ChatActivity? chatActivity))
-            return;
+        Task? deactivationTask;
+        lock (deactivatingTasks)
+        {
+            if (deactivatingTasks.TryGetValue(character.Name, out deactivationTask) == false)
+            {
+                if (!activities.TryGetValue(character.Name, out ChatActivity? chatActivity))
+                    return;
+                deactivationTask = DeactivateCore(character.Name, chatActivity);
+                deactivatingTasks[character.Name] = deactivationTask;
+            }
+        }
 
+        try
+        {
+            await deactivationTask;
+        }
+        finally
+        {
+            lock (deactivatingTasks)
+                deactivatingTasks.Remove(character.Name);
+        }
+    }
+
+    async Task DeactivateCore(string name, ChatActivity chatActivity)
+    {
         Destroying?.Invoke(chatActivity);
         await chatActivity.Destroy();
-        activities.Remove(character.Name);
+        activities.Remove(name);
         Destroyed?.Invoke(chatActivity);
+    }
+
+    /// <summary>打断全部对话并限时关闭所有角色，避免单个外部服务拖住全局关闭。</summary>
+    public async Task ForceDeactivateAll(TimeSpan? timeout = null)
+    {
+        ChatActivity[] activeActivities = activities.Values.ToArray();
+        foreach (ChatActivity activity in activeActivities)
+            activity.ChatBot.ChatBreakTokenSource.Cancel();
+
+        Task all = Task.WhenAll(activeActivities.Select(activity =>
+            Deactivate(activity.Character)));
+        using CancellationTokenSource cancellation = new(timeout ?? TimeSpan.FromSeconds(35));
+        try
+        {
+            await all.WaitAsync(cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            foreach (ChatActivity activity in activeActivities)
+                activities.Remove(activity.Character.Name);
+        }
     }
 
     public ChatActivitySystem(
@@ -121,4 +166,5 @@ public class ChatActivitySystem
     readonly CharacterSystem characterSystem;
     readonly object[] appendObjects;
     readonly Dictionary<string, ChatActivity> activities = new();
+    readonly Dictionary<string, Task> deactivatingTasks = new();
 }

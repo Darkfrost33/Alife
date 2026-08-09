@@ -111,7 +111,7 @@
         {
             try
             {
-                string result = AlifeUtility.Command("schtasks", "/query /tn \"Alife\" /fo csv /nh").StandardOutput;
+                string result = AlifeUtility.Command("schtasks", "/query /tn \"Alife\" /fo csv /nh 2> nul").StandardOutput;
                 return result.Contains("Alife");
             }
             catch

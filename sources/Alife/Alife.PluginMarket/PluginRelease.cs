@@ -4,7 +4,7 @@ namespace Alife.PluginMarket;
 public class PluginRelease
 {
     [JsonProperty("date")] 
-    public DateTime Date { get; set; } = DateTime.MinValue;
+    public DateTime? Date { get; set; }
 
     [JsonProperty("note")]
     public string? Note { get; set; }

@@ -110,4 +110,4 @@ pixi-live2d-display 加载模型后会**自动随机轮播** `Idle` 组内所有
 
 **JS → C#：** `ready` / `loaded` / `poke` / `input` / `drag_start` / `drag_end` / `resize_delta`
 
-**Host ↔ Client（stdin/stdout JSON-line）：** `window-move` / `get-position` / `bubble` / `expression` / `motion` / `hide-bubble` / `status` ↔ `ready` / `input` / `interaction` / `position`
+**Host ↔ Client（stdin/stdout JSON-line）：** `window-move` / `get-position` / `get-layout` / `set-layout` / `set-click-through` / `bubble` / `expression` / `motion` / `hide-bubble` / `status` ↔ `ready` / `input` / `interaction` / `position` / `layout`

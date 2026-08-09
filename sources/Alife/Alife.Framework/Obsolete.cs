@@ -17,9 +17,9 @@ public interface ITimeIterative
 [Obsolete("请改用 ChatBehaviour")]
 public interface ISystemEvent
 {
-    public Task AwakeAsync(AwakeContext context);
-    public Task StartAsync(Kernel kernel, ChatActivity chatActivity);
-    public Task DestroyAsync();
+    public Task AwakeAsync(AwakeContext context) => Task.CompletedTask;
+    public Task StartAsync(Kernel kernel, ChatActivity chatActivity) => Task.CompletedTask;
+    public Task DestroyAsync() => Task.CompletedTask;
 }
 
 [Obsolete("请改用 ChatBehaviour")]

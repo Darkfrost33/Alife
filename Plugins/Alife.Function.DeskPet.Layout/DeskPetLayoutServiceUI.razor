@@ -1,0 +1,107 @@
+@namespace Alife.Function.DeskPet
+@using AntDesign
+@using Alife.Framework
+@inherits ModuleUIBase<DeskPetLayoutService, DeskPetLayoutServiceConfig>
+@implements IDisposable
+
+<div style="background: #fafafa; padding: 24px; border-radius: 12px; border: 1px solid #f0f0f0;">
+    <Flex Direction="FlexDirection.Vertical" Gap="@("16")">
+        <Form TModel="DeskPetLayoutServiceConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
+            <FormItem Label="启动时恢复位置">
+                <Switch @bind-Checked="@Configuration.RestoreOnStart"/>
+            </FormItem>
+            <FormItem Label="自动保存布局">
+                <Switch @bind-Checked="@Configuration.SaveOnChange"/>
+                <Text Type="TextElementType.Secondary" Style="font-size: 11px; display: block; margin-top: 4px;">
+                    拖动或缩放桌宠窗口后自动记住位置与大小。
+                </Text>
+            </FormItem>
+            <FormItem Label="鼠标穿透">
+                <Switch Checked="@Configuration.ClickThrough" CheckedChanged="OnClickThroughChanged"/>
+                <Text Type="TextElementType.Secondary" Style="font-size: 11px; display: block; margin-top: 4px;">
+                    开启后鼠标点击会穿过桌宠，无法再拖动或交互。关闭后可正常操作。
+                </Text>
+            </FormItem>
+        </Form>
+
+        @if (LiveConfig.HasSavedLayout)
+        {
+            <Card Size="CardSize.Small" Title="已保存的布局">
+                <Text Type="TextElementType.Secondary" Style="font-size: 12px; line-height: 1.8;">
+                    位置：(@LiveConfig.Left.ToString("F0"), @LiveConfig.Top.ToString("F0"))<br/>
+                    大小：@LiveConfig.Width.ToString("F0") × @LiveConfig.Height.ToString("F0")
+                </Text>
+            </Card>
+        }
+
+        <Button Type="ButtonType.Primary" OnClick="SaveCurrentLayout" Disabled="@(Module == null)">
+            保存当前布局
+        </Button>
+    </Flex>
+</div>
+
+@code {
+    DeskPetLayoutServiceConfig LiveConfig => Module?.Configuration ?? Configuration;
+
+    protected override void OnParametersSet()
+    {
+        SubscribeModule();
+        SyncFromModule();
+    }
+
+    void SubscribeModule()
+    {
+        if (subscribedModule == Module)
+            return;
+
+        if (subscribedModule != null)
+            subscribedModule.LayoutConfigChanged -= OnLayoutConfigChanged;
+
+        subscribedModule = Module;
+        if (subscribedModule != null)
+            subscribedModule.LayoutConfigChanged += OnLayoutConfigChanged;
+    }
+
+    void OnLayoutConfigChanged()
+    {
+        SyncFromModule();
+        InvokeAsync(StateHasChanged);
+    }
+
+    void SyncFromModule()
+    {
+        if (Module?.Configuration is not DeskPetLayoutServiceConfig live)
+            return;
+
+        Configuration.Left = live.Left;
+        Configuration.Top = live.Top;
+        Configuration.Width = live.Width;
+        Configuration.Height = live.Height;
+        Configuration.HasSavedLayout = live.HasSavedLayout;
+        Configuration.ClickThrough = live.ClickThrough;
+    }
+
+    void OnClickThroughChanged(bool enabled)
+    {
+        Configuration.ClickThrough = enabled;
+        Module?.SetClickThrough(enabled);
+    }
+
+    async Task SaveCurrentLayout()
+    {
+        if (Module == null)
+            return;
+
+        await Module.SaveCurrentLayoutAsync();
+        SyncFromModule();
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        if (subscribedModule != null)
+            subscribedModule.LayoutConfigChanged -= OnLayoutConfigChanged;
+    }
+
+    DeskPetLayoutService? subscribedModule;
+}

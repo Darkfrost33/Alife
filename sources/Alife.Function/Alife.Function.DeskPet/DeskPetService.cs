@@ -27,6 +27,14 @@ public class DeskPetService(
 {
     public DeskPetServiceConfig Configuration { get; set; } = null!;
 
+    public event Action<PetLayout>? LayoutChanged;
+
+    public void SetLayout(PetLayout layout) => client.SetLayout(layout);
+
+    public void SetClickThrough(bool enabled) => client.SetClickThrough(enabled);
+
+    public Task<PetLayout> GetLayoutAsync() => client.GetLayoutAsync();
+
     [XmlFunction(FunctionMode.Content)]
     [Description("显示一段气泡文本")]
     public async Task Speak(XmlExecutorContext context, [XmlContent] string content, CancellationToken cancellationToken)
@@ -164,6 +172,7 @@ public class DeskPetService(
         await client.WaitReadyAsync();
         client.OnInput += interactor.Chat;
         client.OnInteracted += text => interactor.Chat("交互：" + text);
+        client.LayoutChanged += OnLayoutChanged;
     }
     protected override Task OnUpdate()
     {
@@ -177,8 +186,11 @@ public class DeskPetService(
     }
     protected override async Task OnDestroy()
     {
+        client.LayoutChanged -= OnLayoutChanged;
         await client.DisposeAsync();
     }
+
+    void OnLayoutChanged(PetLayout layout) => LayoutChanged?.Invoke(layout);
 
     static (int Width, int Height) GetResolution()
     {

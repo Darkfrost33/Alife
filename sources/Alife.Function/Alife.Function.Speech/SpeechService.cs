@@ -20,7 +20,8 @@ public class SpeechService(
     ILogger<SpeechService> logger) :
     ChatBehaviour
 {
-    public bool IsSpeaking => playAudioTask is { IsCompleted: false };
+    //合成中也算说话中：本地模型（如CosyVoice）合成耗时较长，若不计入会出现"回复结束但音频未响"的假空闲窗口
+    public bool IsSpeaking => playAudioTask is { IsCompleted: false } || audioSynthesizingTask is { IsCompleted: false };
 
     [XmlFunction(FunctionMode.Content, order: -10)]
     [Description("将文本以语音方式输出（这应该是你默认对外的交互方式）")]

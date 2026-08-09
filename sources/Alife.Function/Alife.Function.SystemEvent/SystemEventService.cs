@@ -37,6 +37,9 @@ public class SystemEventService(
 {
     public SystemEventServiceConfig Configuration { get; set; } = null!;
 
+    /// <summary>返回 false 时推迟主动报点，用于聊天室等需要协调发言顺序的模块。</summary>
+    public Func<bool>? ProactivePokeGate { get; set; }
+
     public (DateTime Time, string Name)[] ActiveTasks => [
         (timeTask[0].Item1, "自动报点"),
         (timeTask[1].Item1, "")
@@ -125,7 +128,10 @@ public class SystemEventService(
     }
     protected override async Task OnDestroy()
     {
-        await interactor.ChatAsync($"程序关闭中。{Configuration.DestroyPrompt}");
+        // 告别消息可能排在一个已经卡住的回复之后；超时后继续销毁，避免角色无法关闭。
+        Task farewell = interactor.ChatAsync($"程序关闭中。{Configuration.DestroyPrompt}");
+        await Task.WhenAny(farewell, Task.Delay(TimeSpan.FromSeconds(30)));
+        _ = farewell.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
     }
 
     void OnChatSent(string message)
@@ -152,8 +158,8 @@ public class SystemEventService(
 
         timeTask[0].Item1 = DateTime.Now.AddSeconds(currentInterval);
         timeTask[0].Item2 = () => {
-            if (functionService.IsIdle == false)
-                NextTimer(); //发生碰撞，重新尝试
+            if (functionService.IsIdle == false || ProactivePokeGate?.Invoke() == false)
+                NextTimer(); //发生碰撞或环境暂不允许，重新尝试
             else
             {
                 StringBuilder stringBuilder = new();

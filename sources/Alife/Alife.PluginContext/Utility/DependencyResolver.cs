@@ -67,6 +67,8 @@ public partial class DependencyResolver
                 AddDependency(dependency, new VersionConstraint(VersionConstraintType.Minimum, version));
                 AddDependency(dependency, new VersionConstraint(VersionConstraintType.Maximum, version));
             }
+            else if (char.IsDigit(part[0]))
+                AddDependency(dependency, new VersionConstraint(VersionConstraintType.Minimum, part));
             else
                 throw new ArgumentException($"Invalid version spec: {part}");
         }

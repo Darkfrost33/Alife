@@ -14,6 +14,8 @@ public class PythonException(string message) : Exception(message);
 
 public sealed class PythonPipeProcess(string scriptName, string pythonCode, string? pythonExe = null) : IAsyncDisposable
 {
+    public event Action<string>? OnStderr;
+
     public async Task StartAsync(CancellationToken ct = default)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(scriptPath)!);
@@ -35,7 +37,10 @@ public sealed class PythonPipeProcess(string scriptName, string pythonCode, stri
         process = new Process { StartInfo = psi, EnableRaisingEvents = true };
         process.ErrorDataReceived += (_, e) => {
             if (string.IsNullOrEmpty(e.Data) == false)
+            {
+                OnStderr?.Invoke(e.Data);
                 AlifeLog.LogInformation(e.Data); //python用错误流输出普通log，也是醉了
+            }
         };
         process.OutputDataReceived += (_, e) => {
             if (string.IsNullOrEmpty(e.Data) == false)

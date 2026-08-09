@@ -302,7 +302,14 @@ public class ChatBot : IAsyncDisposable
     {
         await cancelTimerSource.CancelAsync();
         await chatBreakSource.CancelAsync();
+
+        // 给被取消的回复留出释放信号量的时间，但不要让关闭流程无限等待。
+        DateTime deadline = DateTime.UtcNow.AddSeconds(30);
+        while (IsChatOccupied && DateTime.UtcNow < deadline)
+            await Task.Delay(50);
+
         chatSemaphore.Dispose();
+        chatHistorySemaphore.Dispose();
         chatBreakSource.Dispose();
         cancelTimerSource.Dispose();
     }
