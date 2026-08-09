@@ -130,6 +130,12 @@ public class ChatBot : IAsyncDisposable
                 }
             }
 
+            // ChatSent handlers may cancel this turn after keeping the user message in
+            // history (for example, a non-primary voice responder in a chat room).
+            // Do not rely on every language model implementation to observe a token
+            // that was already cancelled before the streaming call starts.
+            cancellationToken.ThrowIfCancellationRequested();
+
             Exception? error = null;
             TokenUsage tokenUsage = new();
             string aiMessage = "";

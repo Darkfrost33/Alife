@@ -22,6 +22,7 @@ public static class Program
         Console.WriteLine(typeof(Function.Developer.DeveloperService).Assembly);
         
         Console.WriteLine(typeof(Function.FunctionCaller.XmlFunctionCaller).Assembly);
+        Console.WriteLine(typeof(Function.ChatRoom.ChatRoomService).Assembly);
         Console.WriteLine(typeof(Function.Mcp.McpService).Assembly);
         Console.WriteLine(typeof(Function.Skill.SkillService).Assembly);
         Console.WriteLine(typeof(Function.Language.OpenAI.OpenAILanguageModel).Assembly);
