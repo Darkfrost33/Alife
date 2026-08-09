@@ -6,6 +6,7 @@ namespace Alife.DeskPet;
 public class DragModule : IPetModule
 {
     public event Action? DragEnded;
+    public bool IsDragging => isDragging;
 
     readonly PetBridge bridge;
     readonly MainWindow window;

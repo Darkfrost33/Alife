@@ -11,12 +11,17 @@ public class MotionDetector
     public event Action? WindowMoved;
     public event Action? MouseShaken;
 
-    public void Update(double mouseX, double mouseY, double centerX, double centerY, double windowLeft, double windowTop)
+    public void Update(double mouseX, double mouseY, double centerX, double centerY,
+        double windowLeft, double windowTop, bool isWindowDragging)
     {
         long now = DateTimeOffset.Now.ToUnixTimeMilliseconds();
 
         // 1. 处理窗口位移检测
-        if (now - lastTime > ResetTimeWindow)
+        if (isWindowDragging == false || wasWindowDragging == false)
+        {
+            Reset();
+        }
+        else if (now - lastTime > ResetTimeWindow)
         {
             totalPath = 0;
             directionChanges = 0;
@@ -68,6 +73,7 @@ public class MotionDetector
             }
         }
         lastTime = now;
+        wasWindowDragging = isWindowDragging;
 
         // 2. 处理鼠标逗弄检测 (改为角度旋转追踪)
         double dxMouse = mouseX - centerX;
@@ -130,6 +136,7 @@ public class MotionDetector
     double lastDx;
     double lastDy;
     long lastTime;
+    bool wasWindowDragging;
     bool isFirstWindowSample = true;
     bool isFirstMouseSample = true;
 

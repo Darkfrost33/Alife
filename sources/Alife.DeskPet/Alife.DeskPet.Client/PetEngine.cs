@@ -145,7 +145,8 @@ public class PetEngine : IAsyncDisposable
             double centerX = layout.Left + layout.Width / 2;
             double centerY = layout.Top + layout.Height / 2;
 
-            detector.Update(windowMouseX, windowMouseY, centerX, centerY, layout.Left, layout.Top);
+            detector.Update(windowMouseX, windowMouseY, centerX, centerY,
+                layout.Left, layout.Top, drag?.IsDragging == true);
 
             if (gaze != null)
             {

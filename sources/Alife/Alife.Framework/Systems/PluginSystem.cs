@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -49,7 +50,7 @@ public class PluginSystem
         bool NeedForceUpgrade(PluginPackage pluginPackage)
         {
             string? installedVersion = GetInstalledVersion(pluginPackage.Id);
-            if (installedVersion == null || pluginPackage.Releases == null)
+            if (!IsInstalledRelease(installedVersion) || pluginPackage.Releases == null)
                 return false;
 
             int clientMajor = DependencyResolver.GetMajorVersion(ClientVersion);
@@ -75,7 +76,7 @@ public class PluginSystem
     public bool HasUpdate(PluginPackage pluginPackage)
     {
         string? installedVersion = GetInstalledVersion(pluginPackage.Id);
-        if (installedVersion == null || pluginPackage.Releases == null)
+        if (!IsInstalledRelease(installedVersion) || pluginPackage.Releases == null)
             return false;
 
         string? latestVersion = GetLatestVersion(pluginPackage);
@@ -83,6 +84,12 @@ public class PluginSystem
             return false;
 
         return DependencyResolver.CompareVersions(installedVersion, latestVersion) < 0;
+    }
+
+    static bool IsInstalledRelease([NotNullWhen(true)] string? version)
+    {
+        return !string.IsNullOrWhiteSpace(version) &&
+               DependencyResolver.CompareVersions(version, "0.0.0") > 0;
     }
 
     public string? GetInstalledVersion(string pluginId)
