@@ -37,6 +37,7 @@ public static class Program
         Console.WriteLine(typeof(Function.DeskPet.DeskPetService).Assembly);
         Console.WriteLine(typeof(Function.QChat.QChatService).Assembly);
         Console.WriteLine(typeof(Function.Speech.SpeechService).Assembly);
+        Console.WriteLine(typeof(Function.AutoSpeak.AutoSpeakService).Assembly);
         
         Console.WriteLine(typeof(Function.Auditory.SenseVoice.SenseVoiceAuditoryModel).Assembly);
         Console.WriteLine(typeof(Function.Speech.EdgeTTS.EdgeSpeechModel).Assembly);

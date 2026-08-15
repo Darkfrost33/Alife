@@ -53,7 +53,7 @@ set "SKIPPED=0"
 
 if not "%~1"=="" goto :sync_named
 
-rem ----- auto / all: iterate all plugin folders -----
+rem ----- auto / all: iterate Storage\Plugins, then repo Plugins\ overlays -----
 for /d %%D in ("%SRC%\*") do (
   set "NAME=%%~nxD"
   call :should_sync "!NAME!"
@@ -66,6 +66,21 @@ for /d %%D in ("%SRC%\*") do (
     set /a SKIPPED+=1
   ) else (
     call :copy_one "!NAME!"
+  )
+)
+
+rem Repo-maintained overlays (e.g. AutoSpeak, DeskPet.Layout) may only live under Plugins\.
+if exist "%REPO%Plugins\" (
+  for /d %%D in ("%REPO%Plugins\*") do (
+    set "NAME=%%~nxD"
+    if not exist "%DST%\!NAME!\" (
+      call :should_sync "!NAME!"
+      if not errorlevel 1 call :copy_one "!NAME!"
+    ) else if exist "%REPO%Plugins\!NAME!\" (
+      rem Always refresh overlays from repo source when present.
+      call :should_sync "!NAME!"
+      if not errorlevel 1 call :copy_one "!NAME!"
+    )
   )
 )
 goto :done

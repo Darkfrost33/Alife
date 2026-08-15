@@ -44,6 +44,12 @@ public class XmlFunctionCaller(
     public bool IsIdle => executor.IsInactive;
 
     /// <summary>
+    /// 向当前对话的 XML 解析流注入文本（例如自动包裹 &lt;speak&gt;）。
+    /// 须在模块 OnStart 完成之后调用。
+    /// </summary>
+    public void Feed(string text) => executor.Feed(text);
+
+    /// <summary>
     /// 当前系统中的函数调用注册信息。
     /// XmlHandlerTable支持你禁用其中的部分函数，从而实现拦截或手动调用的需求
     /// </summary>
