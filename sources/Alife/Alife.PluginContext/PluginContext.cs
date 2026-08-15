@@ -61,7 +61,14 @@ public class PluginContext(
             foreach (var pluginDirectory in Directory.GetDirectories(pluginRootDirectory))
             {
                 string pluginId = Path.GetFileName(pluginDirectory);
-                LoadPluginManifest(pluginId);
+                try
+                {
+                    LoadPluginManifest(pluginId);
+                }
+                catch (Exception e)
+                {
+                    AlifeLog.LogError(new Exception($"加载 {pluginId} 插件清单失败。", e));
+                }
             }
         }
 
@@ -120,12 +127,11 @@ public class PluginContext(
                 }
                 catch (Exception e)
                 {
-                    AlifeLog.LogError(e);
+                    AlifeLog.LogError(new Exception($"加载 {pluginId} 插件失败。", e));
                 }
             }
         }
     }
-
     public async Task ReloadPluginDll(string pluginId, bool recompile = false)
     {
         PluginManifest pluginManifest = LoadPluginManifest(pluginId);
@@ -183,11 +189,30 @@ public class PluginContext(
             }
         }
     }
-    public async Task UnloadPluginDll(string pluginId)
+
+    public async Task ClearPluginDll(string pluginId)
     {
-        if (currentPluginLoadContexts.TryGetValue(pluginId, out var value))
-            await value.DisposeAsync();
-        File.Delete(GetPluginCompiledDllPath(pluginId));
+        {
+            if (currentPluginLoadContexts.TryGetValue(pluginId, out var value))
+                await value.DisposeAsync();
+            File.Delete(GetPluginCompiledDllPath(pluginId));
+        }
+
+        //同时清理被依赖插件的的dll，以重新编译
+        List<string> beDependentPlugins = GetBeDependentPlugins(pluginId);
+        foreach (string beDependentPluginId in beDependentPlugins)
+        {
+            if (currentPluginLoadContexts.TryGetValue(beDependentPluginId, out var value))
+                await value.DisposeAsync();
+            File.Delete(GetPluginCompiledDllPath(beDependentPluginId));
+        }
+    }
+    public async Task ClearAllPluginDll()
+    {
+        foreach (var pluginLoadContext in currentPluginLoadContexts.Values.ToArray())
+            await pluginLoadContext.DisposeAsync();
+        Directory.Delete(dllOutputDirectory, true);
+        Directory.CreateDirectory(dllOutputDirectory);
     }
 
     public string GetPluginManifestPath(string pluginId) => Path.Combine(pluginRootDirectory, pluginId, "manifest.json");
@@ -204,12 +229,27 @@ public class PluginContext(
             return null;
         return pluginId;
     }
+    public List<string> GetBeDependentPlugins(string pluginId)
+    {
+        List<string> dependents = new();
+        foreach ((string id, PluginManifest manifest) in AllPluginManifests)
+        {
+            if (id == pluginId)
+                continue;
+
+            Dictionary<string, string>? dependencies = manifest.Dependencies;
+            if (dependencies != null && dependencies.ContainsKey(pluginId))
+                dependents.Add(id);
+        }
+
+        return dependents;
+    }
 
 
     public PluginManifest LoadPluginManifest(string pluginId)
     {
         if (Directory.Exists(GetPluginDirectoryPath(pluginId)) == false)
-            throw new Exception("插件不存在，请确保插件根文件夹中存在该插件目录。");
+            throw new Exception($"插件 {pluginId} 不存在，请确保插件根文件夹中存在该插件目录。");
 
         string pluginManifestFile = GetPluginManifestPath(pluginId);
 

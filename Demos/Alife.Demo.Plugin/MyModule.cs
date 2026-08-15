@@ -24,7 +24,7 @@ public class MyModuleConfig
 public class MyModule( //Module 可以通过依赖注入来获取其他系统、工具、插件对象，具体可见 ChatActivitySystem 的创建过程
     XmlFunctionCaller functionCaller, //XmlFunctionCaller 是一个常用的插件模块，借此可以轻松实现函数调用，是非常常用的基础模块
     ILogger<MyModule> logger, //可以申请专用的 logger，这不仅是一种规范，而且 logger 中记录的警告、报错将会实际的通过 UI 通知用户
-    IInteractor<MyModule> interactor //当需要和 ai 交互时，使用专用的交换器，他可以自动格式化发给ai的文本，而且可以处理插件重载时的提示词注入问题
+    Interactor<MyModule> interactor //当需要和 ai 交互时，使用专用的交换器，他可以自动格式化发给ai的文本，而且可以处理插件重载时的提示词注入问题
 ) :
     ChatBehaviour, //一个常用的特殊模块基类，使用该基类后，获取到 ChatActivity 上下文，以及其生命周期事件
     IConfigurable<MyModuleConfig> //通过实现 IConfigurable 接入配置功能
@@ -56,10 +56,17 @@ public class MyModule( //Module 可以通过依赖注入来获取其他系统、
 
         //将模块注册为xml处理器，以支持文档化和xml调用
         XmlHandler xmlHandler = new(this) {
-            Description = "此服务可以为你提供一个生成随机数的功能。",
+            Description = "此服务可以为你提供一个生成随机数的功能。", //描述文本总是直接注入到上下文
+            Explanation = "..." //此文本仅会显示在文档中
         };
-        functionCaller.RegisterHandlerWithoutDocument(xmlHandler, cancellationToken: DestroyCancellationToken); //传入取消 token 可以在模块销毁时自动取消函数注册，方便进行热重载
-        interactor.Prompt(xmlHandler.Document()); //注入函数调用文档或自定义提示词（此方法注入的提示词也可重载，但重载时会破坏缓存）
+        functionCaller.RegisterHandler(xmlHandler,
+            DocumentMode.Implicit, //使用隐式文档功能，可以实现调用时才注入文档提示词，从而节省上下文开销，实现更大的可扩展性
+            cancellationToken: DestroyCancellationToken //传入取消 token 可以在模块销毁时自动取消函数注册，方便进行热重载
+        );
+
+        // 备选：将文档直接注入到上下文中，适合那些希望全局生效的功能
+        // functionCaller.RegisterHandlerWithoutDocument(xmlHandler, cancellationToken: DestroyCancellationToken);
+        // interactor.Prompt(xmlHandler.Document()); //Prompt注入的提示词默认支持热重载
 
         return Task.CompletedTask;
     }
@@ -70,7 +77,7 @@ public class MyModule( //Module 可以通过依赖注入来获取其他系统、
     }
     protected override async Task OnStart()
     {
-        string aiMessage = await interactor.ChatAsync("你好啊！"); //OnStart发生在同期模块都Awake之后，此时系统已完全创建，可以与ai进行正常交互了。
+        ChatResult result = await interactor.ChatAsync("你好啊！"); //OnStart发生在同期模块都Awake之后，此时系统已完全创建，可以与ai进行正常交互了。
     }
     protected override Task OnUpdate()
     {

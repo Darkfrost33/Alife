@@ -13,6 +13,7 @@ public class ChatMessage
 {
     public string? Content { get; set; }
     public string? Reasoning { get; set; }
+    public string? ThinkingReason { get; set; }
     public bool IsUser { get; set; }
     public bool IsInputting { get; set; }
     public bool IsReasoning { get; set; }
@@ -38,6 +39,7 @@ public class ChatMessageService
             SaveSettings();
         }
     }
+
     public int MaxMessageCount
     {
         get => settings.MaxMessageCount;
@@ -47,6 +49,7 @@ public class ChatMessageService
             SaveSettings();
         }
     }
+
     public bool ShowReasoning
     {
         get => settings.ShowReasoning;
@@ -126,7 +129,14 @@ public class ChatMessageService
             lock (messages)
             {
                 messages.Add(new ChatMessage { Content = message, IsUser = true });
-                messages.Add(new ChatMessage { IsUser = false, IsInputting = true });
+                string? thinkingReason = null;
+
+                activity.ChatBot.LanguageModel.GetThinkingRequester().Query(list => {
+                    if (list.Count > 0)
+                        thinkingReason = string.Join(" | ", list.Select(marker => marker.Reason));
+                });
+
+                messages.Add(new ChatMessage { IsUser = false, IsInputting = true, ThinkingReason = thinkingReason });
                 TrimMessages(name);
             }
 

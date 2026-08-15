@@ -10,27 +10,24 @@ namespace Alife.Function.QChat;
 /// </summary>
 public static class OneBotSegment
 {
-    public static string GetSourceTag(this OneBotMessageEvent message)
-    {
-        string groupLabel = $"{message.GroupId}({message.GroupName})";
-        string sayerLabel = $"{message.UserId}({message.Sender?.Nickname})";
-        return message.MessageType == OneBotMessageType.Group
-            ? $"[群聊 {groupLabel}, 发言人 {sayerLabel}]"
-            : $"[私聊 {sayerLabel}]";
-    }
     public static string GetSpeakerTag(this OneBotBasicMessageEvent basicMessage)
     {
         string sayerLabel = basicMessage is OneBotMessageEvent messageEvent
             ? $"{basicMessage.UserId}({messageEvent.Sender?.Nickname})"
             : $"{basicMessage.UserId}";
-        return (basicMessage.GroupId == 0 ? "[私聊]" : "") + $"[{sayerLabel}]";
+        return $"[{sayerLabel}]";
     }
-    public static string GetGroupTag(this OneBotBasicMessageEvent basicMessage)
+    public static string? GetPrivateName(this OneBotBasicMessageEvent basicMessage)
     {
-        string groupLabel = basicMessage is OneBotMessageEvent messageEvent
-            ? $"{basicMessage.GroupId}({messageEvent.GroupName})"
-            : $"{basicMessage.GroupId}";
-        return $"[{groupLabel}]";
+        if (basicMessage is OneBotMessageEvent messageEvent)
+            return messageEvent.Sender?.Nickname;
+        return null;
+    }
+    public static string? GetGroupName(this OneBotBasicMessageEvent basicMessage)
+    {
+        if (basicMessage is OneBotMessageEvent messageEvent)
+            return messageEvent.GroupName;
+        return null;
     }
 
     /// <summary>
@@ -47,6 +44,7 @@ public static class OneBotSegment
         content = await FilterFile(content, messageEvent.GroupId, oneBotClient);
         content = FilterForward(content);
         content = FilterImage(content);
+        content = FilterRecord(content);
         return content;
     }
     /// <summary>
@@ -59,6 +57,7 @@ public static class OneBotSegment
         text = FilterAt(text);
         text = FilterForward(text, true);
         text = FilterImage(text);
+        text = FilterRecord(text);
         return text;
     }
 
@@ -148,9 +147,18 @@ public static class OneBotSegment
     }
     public static string FilterImage(string text)
     {
-        text = Regex.Replace(text, @"\[CQ:image,.*?url=(?<url>http[s]?://[^,\]]+).*?\]", "[图片: ${url}]");
+        text = Regex.Replace(text, @"\[CQ:image,.*?path=(?<path>[^,\]]+).*?\]", "[图片: ${path}]");
+        text = Regex.Replace(text, @"\[CQ:image,.*?url=(?<url>[^,\]]+).*?\]", "[图片: ${url}]");
         text = Regex.Replace(text, @"\[CQ:image,.*?file=(?<file>[^,\]]+).*?\]", "[图片: ${file}]");
         text = Regex.Replace(text, @"\[CQ:image[^\]]*\]", "[图片]");
+        return text;
+    }
+    public static string FilterRecord(string text)
+    {
+        text = Regex.Replace(text, @"\[CQ:record,.*?path=(?<path>[^,\]]+).*?\]", "[音频: ${path}]");
+        text = Regex.Replace(text, @"\[CQ:record,.*?url=(?<url>[^,\]]+).*?\]", "[音频: ${url}]");
+        text = Regex.Replace(text, @"\[CQ:record,.*?file=(?<file>[^,\]]+).*?\]", "[音频: ${file}]");
+        text = Regex.Replace(text, @"\[CQ:record[^\]]*\]", "[音频]");
         return text;
     }
     public static async Task<string> FilterFile(string text, long groupId, OneBotClient client)
@@ -167,7 +175,7 @@ public static class OneBotSegment
             OneBotFile? fileInfo = groupId != 0
                 ? await client.GetGroupFileUrl(groupId, fileId)
                 : await client.GetPrivateFileUrl(fileId);
-            
+
             string info = fileInfo != null
                 ? $"[文件: {fileName}, 大小: {fileInfo.Size}b, 下载地址: {fileInfo.Url}]"
                 : $"[文件: {fileName}]";

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,16 +8,18 @@ using Windows.Media.Capture;
 using Windows.Media.MediaProperties;
 using Windows.Media.Render;
 using Alife.Framework;
+using Alife.Function.MessageFilter;
 
 namespace Alife.Function.Auditory;
 
-[Module("语音识别",
-    "为AI增加语音识别能力。",
+[Module("听觉能力",
+    "为AI增加实时语音识别能力（监听麦克风并实时转文字）。",
     defaultCategory: "Alife 官方/交互方式",
     EditorUI = typeof(AuditoryServiceUI))]
 public class AuditoryService(
-    AIModelUtility.IAuditoryModel auditoryModel,
-    IInteractor<AuditoryService> interactor) :
+    Interactor<AuditoryService> interactor,
+    MessageFilterService messageFilterService,
+    AIModelUtility.IAuditoryModel auditoryModel) :
     ChatBehaviour,
     IConfigurable<AuditoryServiceConfig>
 {
@@ -36,7 +39,7 @@ public class AuditoryService(
             var settings = new AudioGraphSettings(AudioRenderCategory.Speech) {
                 EncodingProperties = AudioEncodingProperties.CreatePcm(16000, 1, 32)
             };
-            settings.EncodingProperties.Subtype = MediaEncodingSubtypes.Float;// 输出 32位 Float，Sherpa 和 Silero 直接可用
+            settings.EncodingProperties.Subtype = MediaEncodingSubtypes.Float; // 输出 32位 Float，Sherpa 和 Silero 直接可用
             var result = await AudioGraph.CreateAsync(settings);
             if (result.Status != AudioGraphCreationStatus.Success)
                 throw new Exception($"AudioGraph 创建失败: {result.Status}");
@@ -83,16 +86,23 @@ public class AuditoryService(
 
     protected override async Task OnStart()
     {
-        interactor.ChatTextFilter = text =>
-            $"""
-             消息来源:[{nameof(AuditoryService)}]
-             {text}
-             (语音识别结果，容易误识别)
-             (建议用语音功能回复)
-             """;
+        //注册回复规则
+        if (Configuration.ReplyRestrictedWords.Count != 0)
+        {
+            messageFilterService.AddMessageReplyRule(new MessageReplyRule {
+                Name = nameof(AuditoryService),
+                InputMatching = input => input.Contains(Interactor<AuditoryService>.GetMessageTag()),
+                OutputMatching = output => Configuration.ReplyRestrictedWords.Any(tag => output.Contains(tag, StringComparison.OrdinalIgnoreCase)),
+                CorrectionMessage = () =>
+                    $"{nameof(AuditoryService)}消息必须用{string.Join("或", Configuration.ReplyRestrictedWords)}标签回复。如果不想发送消息，也请发送空标签。"
+            }, DestroyCancellationToken);
+        }
+
+        //开始语言识别
         auditoryModel.Recognized += OnRecognized;
         await StartRecordingAsync();
     }
+
     protected override Task OnDestroy()
     {
         auditoryModel.Recognized -= OnRecognized;
@@ -118,7 +128,7 @@ public class AuditoryService(
         // 这里通过 CsWinRT 暴露的 NativeObject 获取原生 IUnknown 指针，再通过 QueryInterface 和函数指针调用
         // ReSharper disable once SuspiciousTypeConversion.Global
         IntPtr unk = ((WinRT.IWinRTObject)reference).NativeObject.ThisPtr;
-        Guid iid = new Guid("5B0D3235-4DBA-4D44-865E-8F1D0E4FD04D");// IMemoryBufferByteAccess
+        Guid iid = new Guid("5B0D3235-4DBA-4D44-865E-8F1D0E4FD04D"); // IMemoryBufferByteAccess
         if (Marshal.QueryInterface(unk, in iid, out IntPtr ptr) != 0)
         {
             Console.WriteLine("查询音频缓存区COM对象失败！");
@@ -140,14 +150,14 @@ public class AuditoryService(
             {
                 float[] samples = new float[sampleCount];
 
-                if (IsListening)// 按住时发送真实音频
+                if (IsListening) // 按住时发送真实音频
                 {
                     fixed (float* dest = samples)
                         Buffer.MemoryCopy(dataInBytes, dest, capacityInBytes, capacityInBytes);
                 }
 
                 ThreadPool.QueueUserWorkItem(_ => {
-                    auditoryModel.AcceptWaveform(samples);
+                    auditoryModel.AcceptWaveform(samples, sampleCount);
                 });
             }
         }
@@ -183,12 +193,13 @@ public class AuditoryService(
             }
         }
     }
-    void OnUnrecoverableErrorOccurred(AudioGraph audioGraph, AudioGraphUnrecoverableErrorOccurredEventArgs audioGraphUnrecoverableErrorOccurredEventArgs)
+    void OnUnrecoverableErrorOccurred(AudioGraph audioGraph,
+        AudioGraphUnrecoverableErrorOccurredEventArgs audioGraphUnrecoverableErrorOccurredEventArgs)
     {
         StopRecording();
     }
     void OnRecognized(string text)
     {
-        interactor.Chat(text);
+        interactor.Chat(text + "(消息为语音识别结果，错误率较高；建议也用语音功能回复)");
     }
 }

@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,7 +12,7 @@ namespace Alife.Function.ProcessService;
     defaultCategory: "Alife 官方/实用工具")]
 public class ProcessService(
     XmlFunctionCaller functionCaller,
-    IInteractor<ProcessService> interactor) :
+    Interactor<ProcessService> interactor) :
     ChatBehaviour
 {
     [XmlFunction(FunctionMode.OneShot)]
@@ -28,10 +29,10 @@ public class ProcessService(
     [XmlFunction(FunctionMode.OneShot)]
     public void KillProcess(string name)
     {
-        if (impl.KillProcess(name))
-            interactor.Poke($"进程已杀死: {name}");
-        else
-            interactor.Throw($"进程不存在: {name}");
+        if (impl.KillProcess(name) == false)
+            throw new Exception($"进程不存在: {name}");
+
+        interactor.Poke($"进程已杀死: {name}");
     }
 
     [XmlFunction(FunctionMode.Content)]
@@ -110,7 +111,7 @@ public class ProcessService(
     protected override Task OnDestroy()
     {
         impl.KillAll();
-        
+
         return Task.CompletedTask;
     }
 

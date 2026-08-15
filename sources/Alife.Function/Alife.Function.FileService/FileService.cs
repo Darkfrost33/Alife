@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,7 +13,7 @@ namespace Alife.Function.FileService;
     defaultCategory: "Alife 官方/实用工具")]
 public class FileService(
     XmlFunctionCaller functionCaller,
-    IInteractor<FileService> interactor) :
+    Interactor<FileService> interactor) :
     ChatBehaviour
 {
     [XmlFunction(FunctionMode.Content)]
@@ -30,24 +31,19 @@ public class FileService(
     [Description("读取目录内容（不含子目录）或文件内容（返回格式为`行号: 内容`）")]
     public async Task Read(
         [Description("目录或文件路径")] string path,
-        int? startLine = null,
+        [Description("支持用负数表示倒数第几行")] int? startLine = null,
         int? lineCount = null,
         CancellationToken cancellationToken = default)
     {
         FileReadResult result = await impl.ReadAsync(path, startLine, lineCount, cancellationToken);
 
         if (result.Error != null)
-        {
-            interactor.Throw(result.Error);
-        }
-        else if (result.TempFilePath != null)
-        {
+            throw new Exception(result.Error);
+
+        if (result.TempFilePath != null)
             interactor.Poke($"内容过大，已写入临时文件: {result.TempFilePath}");
-        }
         else
-        {
             interactor.Poke(result.Content!);
-        }
     }
 
     [XmlFunction(FunctionMode.Content)]
@@ -61,10 +57,7 @@ public class FileService(
         if (context.CallMode == CallMode.Closing)
         {
             if (string.IsNullOrEmpty(oldString) || string.IsNullOrEmpty(newString))
-            {
-                interactor.Throw("未提供 oldString 或 newString 标签内容");
-                return;
-            }
+                throw new Exception("未提供 oldString 或 newString 标签内容");
 
             await impl.EditAsync(filePath, oldString, newString, replaceAll);
             interactor.Poke("文件已更新");
