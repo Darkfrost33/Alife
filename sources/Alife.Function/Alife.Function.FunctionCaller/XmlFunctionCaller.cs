@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using Alife.Framework;
 using Alife.Foundation;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace Alife.Function.FunctionCaller;
 
@@ -27,18 +27,30 @@ public enum DocumentMode
     Explicit,
 }
 
+public partial class XmlFunctionCaller
+{
+    public static string GetDocumentTag(XmlHandler handler)
+    {
+        return $"[使用文档({handler.Name})]";
+    }
+    public static bool HasDocumentTag(string message)
+    {
+        return message.Contains("[使用文档(");
+    }
+}
+
 [Module(
     "Xml函数执行器",
     "提供一种Xml函数调用框架，可以将注册其中的函数，暴露给AI，并指导其用Xml标签调用。",
     launchOrder: -10000, //在活动开始之前，将收集到的函数调用信息注入
     defaultCategory: "Alife 官方/功能底座")]
-public class XmlFunctionCaller(
+public partial class XmlFunctionCaller(
     ILogger<XmlFunctionCaller> logger,
-    IInteractor<XmlFunctionCaller> interactor) :
+    Interactor<XmlFunctionCaller> interactor) :
     ChatBehaviour,
     IConfigurable<XmlFunctionCallerConfig>
 {
-    public event Func<Task>? ChatCalled;
+    public event Func<Task>? ChatCalledAsync;
     public event Action<XmlStreamingContent>? ContentStreaming;
     public XmlFunctionCallerConfig Configuration { get; set; } = null!;
     public bool IsIdle => executor.IsInactive;
@@ -54,11 +66,6 @@ public class XmlFunctionCaller(
     /// XmlHandlerTable支持你禁用其中的部分函数，从而实现拦截或手动调用的需求
     /// </summary>
     public XmlHandlerTable HandlerTable => handlerTable;
-
-    public string GetExplicitDocumentTag(string handlerName)
-    {
-        return $"[显式文档({handlerName})]";
-    }
 
     public void RegisterHandler(XmlHandler handler, DocumentMode documentMode = DocumentMode.Explicit, CancellationToken cancellationToken = default)
     {
@@ -81,6 +88,8 @@ public class XmlFunctionCaller(
         }
         if (cancellationToken != CancellationToken.None)
             cancellationToken.Register(() => UnregisterHandler(handler));
+
+        UpdatePrompt();
     }
     public void RegisterHandlerWithoutDocument(XmlHandler handler, CancellationToken cancellationToken = default)
     {
@@ -95,37 +104,47 @@ public class XmlFunctionCaller(
         handlerTable.Unregister(handler);
         explicitHandlers.Remove(handler);
         implicitHandlers.Remove(handler);
+
+        UpdatePrompt();
     }
     /// <summary>
     /// 标记指定的xml标签内容均为生文本，不要参与xml解析，这意味着ai不需要考虑这些xml标签内容的通配问题。
     /// xml函数中被标记为[XmlForm]的参数会自动注册为plainArea
     /// </summary>
     /// <param name="plainAreas"></param>
-    public void AddPlainAreas(params string[] plainAreas)
+    public void AddPlainAreas(params IEnumerable<string> plainAreas)
     {
-        this.plainAreas.AddRange(plainAreas);
+        foreach (var plainArea in plainAreas)
+            this.plainAreas.Add(plainArea.ToLower());
     }
 
     readonly XmlHandlerTable handlerTable = new();
     readonly List<XmlHandler> explicitHandlers = new();
     readonly List<XmlHandler> implicitHandlers = new();
-    readonly List<string> plainAreas = new();
+    readonly HashSet<string> plainAreas = new();
     XmlStreamParser parser = null!;
     XmlStreamExecutor executor = null!;
-    readonly List<ChatMessageContent> chatHistoryBuffer = new();
-    OccupationMarker? occupationMarker;
+    OccupationMarker? chatOccupationMarker;
+    //自动思考功能
+    OccupationMarker? thinkingOccupationMarker;
+    readonly List<string> thinkingReasons = new();
 
+    protected override Task OnAwake()
+    {
+        UpdatePrompt(); //提前注入一个提示词块
+        return Task.CompletedTask;
+    }
     protected override Task OnStart()
     {
         //统计XmlForm参数以便注册为纯文本区域
         IEnumerable<XmlParameter> parameters = handlerTable.GetAllHandlers()
             .SelectMany(handler => handler.Functions
                 .SelectMany(function => function.Parameters));
-        plainAreas.AddRange(parameters.Where(parameter => parameter.IsXmlForm)
+        AddPlainAreas(parameters.Where(parameter => parameter.IsXmlForm)
             .Select(parameter => parameter.Name));
 
         //创建xml解析执行器等
-        parser = new XmlStreamParser(plainAreas.Distinct());
+        parser = new XmlStreamParser(plainAreas);
         executor = new XmlStreamExecutor(
             parser,
             handlerTable,
@@ -142,6 +161,164 @@ public class XmlFunctionCaller(
         ChatBot.ChatReceived += OnChatReceived;
         ChatBot.ChatFinishedAsync += OnChatFinishedAsync;
 
+        return Task.CompletedTask;
+    }
+    protected override async Task OnDestroy()
+    {
+        ChatBot.ChatSent -= OnChatSent;
+        ChatBot.ChatReceived -= OnChatReceived;
+        ChatBot.ChatFinishedAsync -= OnChatFinishedAsync;
+
+        await executor.CancelAndClearAsync();
+        await executor.DisposeAsync();
+
+        if (chatOccupationMarker != null)
+        {
+            ChatBot.ResourceOccupiedReason.Return(chatOccupationMarker);
+            chatOccupationMarker = null;
+        }
+    }
+
+    void OnChatSent(string obj)
+    {
+        //上一轮若异常退出未归还，先清掉，避免占用标记堆积导致输入框一直显示「函数执行」
+        if (chatOccupationMarker != null)
+            ChatBot.ResourceOccupiedReason.Return(chatOccupationMarker);
+        chatOccupationMarker = ChatBot.ResourceOccupiedReason.Rent("函数执行");
+        thinkingReasons.Clear();
+    }
+    void OnChatReceived(string obj)
+    {
+        executor.Feed(obj);
+    }
+    void OnHandling(string name, XmlContext context)
+    {
+        // ChatFinished 可能已归还占用标记，但标签收尾/迟到回调仍会进入这里；不能抛 NRE 打断 speak。
+        if (chatOccupationMarker != null)
+            chatOccupationMarker.Reason = $"执行{name}函数";
+
+        if (context.CallMode != CallMode.Opening && context.CallMode != CallMode.OneShot)
+            return;
+
+        //实现当ai调用隐射函数时自动注入对应的隐式文档
+        IReadOnlyList<XmlHandler>? handlers = handlerTable.GetHandlersOfFunction(name);
+        if (handlers != null) //寻找当前函数的调用处理器
+        {
+            foreach (XmlHandler handler in handlers)
+            {
+                if (implicitHandlers.Contains(handler))
+                {
+                    string documentTag = GetDocumentTag(handler);
+                    bool hasDocumentTag = ChatBot.ChatHistory
+                        .Where(content => content.Role == AuthorRole.User)
+                        .Any(content => content.Content?.Contains(documentTag) ?? false);
+
+                    if (hasDocumentTag == false)
+                    {
+                        interactor.Poke(GetExplicitDocument(handler));
+                        thinkingReasons.Add("重新激活隐式功能");
+                    }
+                }
+            }
+        }
+    }
+    void OnError(string tag, Exception exception)
+    {
+        interactor.Poke($"执行{tag}标签出错：{exception.Message}");
+        logger.LogInformation(exception, $"执行{tag}标签出错");
+        thinkingReasons.Add("需要处理函数异常");
+    }
+    async Task OnChatFinishedAsync(ChatContext chatContext)
+    {
+        OccupationMarker? marker = chatOccupationMarker;
+        try
+        {
+            try
+            {
+                await executor.WaitToInactive(chatContext.CancellationToken);
+                executor.Flush(); //清理缓冲区，内部可能带有残留数据
+            }
+            catch (OperationCanceledException)
+            {
+                //对话被打断，取消执行
+                await executor.CancelAndClearAsync();
+            }
+
+            if (ChatCalledAsync != null)
+            {
+                try
+                {
+                    await Task.WhenAll(ChatCalledAsync.GetInvocationList()
+                        .Cast<Func<Task>>()
+                        .Select(func => func()));
+                }
+                catch (Exception e)
+                {
+                    AlifeLog.LogError(e);
+                }
+            }
+        }
+        finally
+        {
+            if (marker != null)
+            {
+                ChatBot.ResourceOccupiedReason.Return(marker);
+                if (ReferenceEquals(chatOccupationMarker, marker))
+                    chatOccupationMarker = null;
+            }
+        }
+
+        if (ChatBot.ChatHistory
+            .Where(content => content.Role == AuthorRole.User)
+            .Any(content => content.Content != null && HasDocumentTag(content.Content)))
+            thinkingReasons.Add("隐式功能激活中");
+
+        //使用自动思考功能
+        if (thinkingReasons.Count != 0)
+        {
+            if (thinkingOccupationMarker == null)
+                thinkingOccupationMarker = ChatBot.LanguageModel.GetThinkingRequester().Rent(string.Join(" | ", thinkingReasons));
+            else
+                thinkingOccupationMarker.Reason = string.Join(" | ", thinkingReasons);
+        }
+        else if (thinkingOccupationMarker != null)
+        {
+            ChatBot.LanguageModel.GetThinkingRequester().Return(thinkingOccupationMarker);
+            thinkingOccupationMarker = null;
+        }
+    }
+
+    string GetExplicitDocument(XmlHandler handler)
+    {
+        return $"""
+                {GetDocumentTag(handler)}
+                {handler.Description} 
+                #### 提供函数
+                {handler.FunctionDocument()}
+                {(string.IsNullOrEmpty(handler.Explanation) ? "" : $"#### 详细说明\n```\n{handler.Explanation}\n```\n")}
+                """;
+    }
+    string GetImplicitDocument(XmlHandler handler)
+    {
+        return $"""
+                - <{handler.Name}/> : {handler.Description}
+                """;
+    }
+    void AddImplicitTrigger(XmlHandler source)
+    {
+        XmlHandler xmlHandler = new(source.Name + "_Trigger");
+        xmlHandler.Functions.Add(new XmlFunction {
+            Name = source.Name.ToLower(),
+            Invoker = (_, _) => {
+                interactor.Poke(GetExplicitDocument(source));
+                thinkingReasons.Add("即将使用隐式功能");
+                return Task.CompletedTask;
+            }
+        });
+        handlerTable.Register(xmlHandler);
+    }
+    void UpdatePrompt()
+    {
         //注入函数文档
         interactor.Prompt(
             $"""
@@ -167,7 +344,7 @@ public class XmlFunctionCaller(
 
              ## 原始字符串区域
              被如下标签包括的内容可以不用转义，他们会自动保持原始格式
-             {string.Join(',', parser.PlainAreas)}
+             {string.Join(',', plainAreas)}
 
              ## 当前可用功能
 
@@ -183,138 +360,5 @@ public class XmlFunctionCaller(
                    上面这些标签都是开启隐式服务的入口，你要根据实际情况，积极的去调用他们，有很多你需要的功能可能就藏在其中。
                    """)
         );
-        return Task.CompletedTask;
-    }
-
-    protected override async Task OnDestroy()
-    {
-        ChatBot.ChatSent -= OnChatSent;
-        ChatBot.ChatReceived -= OnChatReceived;
-        ChatBot.ChatFinishedAsync -= OnChatFinishedAsync;
-
-        await executor.CancelAndClearAsync();
-        await executor.DisposeAsync();
-
-        if (occupationMarker != null)
-        {
-            ChatBot.ResourceOccupiedReason.Return(occupationMarker);
-            occupationMarker = null;
-        }
-    }
-
-    void OnChatSent(string obj)
-    {
-        //上一轮若异常退出未归还，先清掉，避免占用标记堆积导致输入框一直显示「函数执行」
-        if (occupationMarker != null)
-            ChatBot.ResourceOccupiedReason.Return(occupationMarker);
-        occupationMarker = ChatBot.ResourceOccupiedReason.Rent("函数执行");
-    }
-    void OnChatReceived(string obj)
-    {
-        executor.Feed(obj);
-    }
-    async Task OnChatFinishedAsync(ChatContext chatContext)
-    {
-        OccupationMarker? marker = occupationMarker;
-        try
-        {
-            try
-            {
-                await executor.WaitToInactive(chatContext.CancellationToken);
-                executor.Flush(); //清理缓冲区，内部可能带有残留数据
-            }
-            catch (OperationCanceledException)
-            {
-                //对话被打断，取消执行
-                await executor.CancelAndClearAsync();
-            }
-        }
-        finally
-        {
-            if (marker != null)
-            {
-                ChatBot.ResourceOccupiedReason.Return(marker);
-                if (ReferenceEquals(occupationMarker, marker))
-                    occupationMarker = null;
-            }
-        }
-
-        if (ChatCalled != null)
-        {
-            try
-            {
-                await Task.WhenAll(ChatCalled.GetInvocationList()
-                    .Cast<Func<Task>>()
-                    .Select(func => func()));
-            }
-            catch (Exception e)
-            {
-                AlifeLog.LogError(e);
-            }
-        }
-    }
-
-    void OnError(string tag, Exception exception)
-    {
-        interactor.Poke($"执行{tag}标签出错：{exception.Message}");
-        logger.LogInformation(exception, $"执行{tag}标签出错");
-    }
-    void OnHandling(string name, XmlContext context)
-    {
-        // ChatFinished 可能已归还占用标记，但标签收尾/迟到回调仍会进入这里；不能抛 NRE 打断 speak。
-        if (occupationMarker != null)
-            occupationMarker.Reason = $"执行{name}函数";
-        if (context.CallMode == CallMode.Opening || context.CallMode == CallMode.OneShot)
-        {
-            //实现当ai调用隐射函数时自动注入对应的隐式文档
-            IReadOnlyList<XmlHandler>? handlers = handlerTable.GetHandlersOfFunction(name);
-            if (handlers != null)
-            {
-                var dependentImplicitHandlers = handlers.Intersect(implicitHandlers).ToArray();
-                if (dependentImplicitHandlers.Length != 0)
-                {
-                    chatHistoryBuffer.Clear();
-                    chatHistoryBuffer.AddRange(ChatBot.ChatHistory);
-                    foreach (XmlHandler xmlHandler in dependentImplicitHandlers)
-                    {
-                        string explicitDocumentTag = GetExplicitDocumentTag(xmlHandler.Name);
-                        if (chatHistoryBuffer.All(content => !content.Content?.Contains(explicitDocumentTag) ?? false))
-                            interactor.Poke(GetExplicitDocument(xmlHandler));
-                    }
-                }
-            }
-        }
-    }
-
-    string GetExplicitDocument(XmlHandler handler)
-    {
-        return $"""
-                {GetExplicitDocumentTag(handler.Name)}
-                ### {handler.Name}
-                {handler.Description} 
-                #### 提供函数
-                {handler.FunctionDocument()}
-                {(string.IsNullOrEmpty(handler.Explanation) ? "" : $"#### 详细说明\n```\n{handler.Explanation}\n```\n")}
-                """;
-    }
-    string GetImplicitDocument(XmlHandler handler)
-    {
-        return $"""
-                - <{handler.Name}/> : {handler.Description}
-                """;
-    }
-    void AddImplicitTrigger(XmlHandler source)
-    {
-        XmlHandler xmlHandler = new() {
-            Name = source.Name + "_Trigger"
-        };
-        xmlHandler.Functions.Add(new XmlFunction() {
-            Name = source.Name.ToLower(),
-            Invoker = (_, _) => {
-                interactor.Poke(GetExplicitDocument(source));
-                return Task.CompletedTask;
-            }
-        });
-        handlerTable.Register(xmlHandler);
     }
 }

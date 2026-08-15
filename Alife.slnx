@@ -3,6 +3,7 @@
     <Project Path="Plugins/Alife.Function.DeskPet.Layout/Alife.Function.DeskPet.Layout.csproj" />
   </Folder>
   <Folder Name="/Demos/">
+    <Project Path="Demos/Alife.Demo.Auditory/Alife.Demo.Auditory.csproj" />
     <Project Path="Demos/Alife.Demo.Browser/Alife.Demo.Browser.csproj" />
     <Project Path="Demos/Alife.Demo.DeskPet/Alife.Demo.DeskPet.csproj" />
     <Project Path="Demos/Alife.Demo.Framework/Alife.Demo.Framework.csproj" />
@@ -60,6 +61,7 @@
   </Folder>
   <Folder Name="/Sources/Alife.Function/Interaction/">
     <Project Path="Sources/Alife.Function/Alife.Function.Auditory/Alife.Function.Auditory.csproj" />
+    <Project Path="Sources/Alife.Function/Alife.Function.AutoSpeak/Alife.Function.AutoSpeak.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.DeskPet/Alife.Function.DeskPet.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.QChat/Alife.Function.QChat.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Speech/Alife.Function.Speech.csproj" />

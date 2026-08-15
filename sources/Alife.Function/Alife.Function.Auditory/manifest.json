@@ -1,11 +1,17 @@
 {
-  "Version": "4.0.0",
+  "Version": "4.2.0",
   "Dependencies": {
-    "Alife.Function.AIModelUtility": ""
+    "Alife.Function.AIModelUtility": "",
+    "Alife.Function.FunctionCaller": "",
+    "Alife.Function.MessageFilter": ""
   },
   "Environments": {
     "nuget": {
-      "Microsoft.Windows.SDK.NET.Ref": ""
+      "Microsoft.Windows.SDK.NET.Ref": "",
+      "NAudio": ">=2.3.0"
+    },
+    "pip": {
+      "imageio-ffmpeg": ""
     }
   }
 }

@@ -14,14 +14,14 @@ using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using OpenAI.Chat;
-using ChatMessageContent=Microsoft.SemanticKernel.ChatMessageContent;
+using ChatMessageContent = Microsoft.SemanticKernel.ChatMessageContent;
 
 namespace Alife.Function.Language.OpenAI;
 
 [Module(
     "OpenAI语言模型",
-    "接入与OpenAI协议兼容的文本模型，实现最基本的文本对话功能。",
-    defaultCategory: "Alife 官方/模型接入/文本模型",
+    "接入与OpenAI协议兼容的语言模型，实现最基本的文本对话功能。",
+    defaultCategory: "Alife 官方/模型接入/语言模型",
     editorUI: typeof(OpenAILanguageModelUI)
 )]
 public class OpenAILanguageModel(
@@ -33,6 +33,10 @@ public class OpenAILanguageModel(
 {
     public OpenAILanguageModelConfig Configuration { get; set; } = null!;
 
+    public OccupationNotepad GetThinkingRequester()
+    {
+        return thinkingRequester;
+    }
     public async Task<string> ChatStreamingAsync(
         ChatHistoryAgentThread chatHistoryAgentThread,
         Action<string>? textReceived = null,
@@ -41,11 +45,15 @@ public class OpenAILanguageModel(
         Action<Exception>? exceptionThrow = null,
         CancellationToken cancellationToken = default)
     {
-        StringBuilder nonThinkingContent = new();//用于存储不含思考过程的最终回复
+        StringBuilder nonThinkingContent = new(); //用于存储不含思考过程的最终回复
+        ChatCompletionAgent agent = Configuration.defaultThinking || GetThinkingRequester().IsOccupied
+            ? chatCompletionAgent
+            : chatCompletionAgentNotThinking;
 
         try
         {
-            await foreach (AgentResponseItem<StreamingChatMessageContent> chatMessage in chatCompletionAgent.InvokeStreamingAsync(chatHistoryAgentThread, cancellationToken: cancellationToken))
+            await foreach (AgentResponseItem<StreamingChatMessageContent> chatMessage in agent.InvokeStreamingAsync(
+                               chatHistoryAgentThread, cancellationToken: cancellationToken))
             {
                 string? content = chatMessage.Message.Content;
                 if (content != null)
@@ -106,6 +114,8 @@ public class OpenAILanguageModel(
 
 
     ChatCompletionAgent chatCompletionAgent = null!;
+    ChatCompletionAgent chatCompletionAgentNotThinking = null!;
+    readonly OccupationNotepad thinkingRequester = new();
 
     [Experimental("SKEXP0010")]
     protected override Task OnAwake()
@@ -123,21 +133,28 @@ public class OpenAILanguageModel(
 
         chatCompletionAgent = new() {
             Kernel = kernelService,
-            Arguments = new KernelArguments(ProvidePromptExecutionSettings()),
+            Arguments = new KernelArguments(ProvidePromptExecutionSettings(true)),
+        };
+        chatCompletionAgentNotThinking = new() {
+            Kernel = kernelService,
+            Arguments = new KernelArguments(ProvidePromptExecutionSettings(false)),
         };
 
         return Task.CompletedTask;
     }
 
+
     void RegisterChatCompletion(IKernelBuilder kernelBuilder)
     {
         if (string.IsNullOrWhiteSpace(Configuration.apiKey))
-            throw new Exception("文本模型的key为空，请检查你的“OpenAI语言模型”插件配置是否正确。");
+            throw new Exception("语言模型的key为空，请检查你的“OpenAI语言模型”插件配置是否正确。");
 
         // 强制使用 HTTP 1.1 以解决某些提供者（如 DeepSeek）在流式传输时可能出现的 HttpIOException
         SocketsHttpHandler handler = new() {
             SslOptions = new System.Net.Security.SslClientAuthenticationOptions {
-                RemoteCertificateValidationCallback = delegate { return true; }
+                RemoteCertificateValidationCallback = delegate {
+                    return true;
+                }
             },
             PooledConnectionLifetime = TimeSpan.FromMinutes(5)
         };
@@ -176,20 +193,29 @@ public class OpenAILanguageModel(
             httpClient: httpClient
         );
     }
+
     [Experimental("SKEXP0010")]
-    PromptExecutionSettings ProvidePromptExecutionSettings()
+    PromptExecutionSettings ProvidePromptExecutionSettings(bool thinking)
     {
         OpenAIPromptExecutionSettings settings = new();
 
-        if (string.IsNullOrEmpty(Configuration.reasoningEffort) == false)
-            settings.ReasoningEffort = Configuration.reasoningEffort;
+        if (thinking)
+        {
+            if (string.IsNullOrEmpty(Configuration.reasoningEffort) == false)
+                settings.ReasoningEffort = Configuration.reasoningEffort;
+        }
+        else
+        {
+            settings.ReasoningEffort = null;
+        }
 
         settings.ExtraBody = new Dictionary<string, object?>();
         if (!string.IsNullOrWhiteSpace(Configuration.extraBody))
         {
             try
             {
-                var bodyDict = JsonSerializer.Deserialize<Dictionary<string, object>>(Configuration.extraBody);
+                var bodyDict = JsonSerializer.Deserialize<Dictionary<string, object>>(
+                    thinking ? Configuration.extraBody : Configuration.extraBodyNotThinking);
                 if (bodyDict != null)
                 {
                     foreach (var kvp in bodyDict)

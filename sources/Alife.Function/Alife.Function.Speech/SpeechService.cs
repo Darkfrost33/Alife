@@ -66,7 +66,7 @@ public class SpeechService(
         XmlHandler xmlHandler = new(this);
         functionService.RegisterHandler(xmlHandler, cancellationToken: DestroyCancellationToken);
         functionService.ContentStreaming += OnContentStreaming;
-        functionService.ChatCalled += OnChatCalled;
+        functionService.ChatCalledAsync += OnChatCalledAsync;
         ChatBot.ChatSent += OnChatSent;
         ChatBot.ChatReceived += OnChatReceived;
         return Task.CompletedTask;
@@ -75,7 +75,7 @@ public class SpeechService(
     protected override async Task OnDestroy()
     {
         functionService.ContentStreaming -= OnContentStreaming;
-        functionService.ChatCalled -= OnChatCalled;
+        functionService.ChatCalledAsync -= OnChatCalledAsync;
         ChatBot.ChatSent -= OnChatSent;
         ChatBot.ChatReceived -= OnChatReceived;
 
@@ -181,7 +181,7 @@ public class SpeechService(
         return new SpeechLatencyTrace(logger, diagnostics.LatencyDiagnosticsName);
     }
 
-    async Task OnChatCalled()
+    async Task OnChatCalledAsync()
     {
         SpeechTurn? turn;
         lock (turnLock)
@@ -190,22 +190,25 @@ public class SpeechService(
         if (turn == null)
             return;
 
-        turn.Complete();
-        try
+        using (ChatBot.ResourceOccupiedReason.Rent("等待语音结束"))
         {
-            await turn.Completion;
-        }
-        catch (OperationCanceledException) {}
-        catch (Exception e)
-        {
-            logger.LogWarning(e, "语音播放失败");
-        }
-        finally
-        {
-            lock (turnLock)
+            turn.Complete();
+            try
             {
-                if (ReferenceEquals(activeTurn, turn))
-                    activeTurn = null;
+                await turn.Completion;
+            }
+            catch (OperationCanceledException) {}
+            catch (Exception e)
+            {
+                logger.LogWarning(e, "语音播放失败");
+            }
+            finally
+            {
+                lock (turnLock)
+                {
+                    if (ReferenceEquals(activeTurn, turn))
+                        activeTurn = null;
+                }
             }
         }
     }

@@ -19,7 +19,7 @@ public class PluginSystem
     /// <summary>
     /// 云端拉取插件
     /// </summary>
-    public async Task SyncOnlinePlugins()
+    public async Task SyncOnlinePluginPackages()
     {
         await pluginMarket.SyncOnlinePluginPackagesAsync();
     }
@@ -28,7 +28,7 @@ public class PluginSystem
     /// 刷新本地插件。
     /// 安装卸载插件时会自动同步，因此默认情况下无需调用，只有手动修改插件清单等数据后，才会用到此函数来主动同步。
     /// </summary>
-    public async Task SyncLocalPlugins()
+    public async Task SyncLocalPluginEnvironment()
     {
         await pluginContext.SyncPluginEnvironment();
     }
@@ -107,16 +107,11 @@ public class PluginSystem
             .FirstOrDefault();
     }
 
-    public List<string> GetBeDependentPlugins(string pluginId)
-    {
-        return pluginMarket.ResolveBeDependentPlugins(pluginId);
-    }
-
     public async Task InstallPlugins(List<KeyValuePair<PluginPackage, string>> plugins)
     {
         //卸载插件并删除其dll，以便在后同步插件环境时重新编译加载
         foreach ((PluginPackage pluginPackage, _) in plugins)
-            await pluginContext.UnloadPluginDll(pluginPackage.Id);
+            await pluginContext.ClearPluginDll(pluginPackage.Id);
         //下载新的插件文件
         await pluginMarket.InstallPlugins(plugins);
         //重新加载

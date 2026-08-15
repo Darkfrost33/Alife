@@ -6,62 +6,63 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace Alife.Framework;
 
-public interface IInteractor
+public partial class Interactor<T>
 {
-    public Func<string, string> ChatTextFilter { get; set; }
-    public void Prompt(string prompt);
-    public void Throw(string error);
-    public void Poke(string message);
-    public void Chat(string message);
-    public Task<string> ChatAsync(string message);
-}
-
-public interface IInteractor<T> : IInteractor;
-
-public class Interactor<T>(ChatBot target) : IInteractor<T>
-{
-    public string GetPromptTag()
+    public static string GetPromptTag()
     {
         return $"[功能说明({typeof(T).Name})]";
     }
+    public static string GetMessageTag()
+    {
+        return $"[消息来源({typeof(T).Name})]";
+    }
+}
 
-    public Func<string, string> ChatTextFilter { get; set; } = text => $"消息来源:[{typeof(T).Name}]\n{text}";
+#pragma warning disable CS0618
+public partial class Interactor<T>(ChatBot target) : IInteractor<T>, IDisposable
+#pragma warning restore CS0618
+{
+    public Func<string, string> ChatTextFilter { get; set; } = text => text;
     public void Prompt(string prompt)
     {
-        string content = $"{GetPromptTag()}\n{prompt}";
-
-        ChatMessageContent? chatMessageContent = target.ChatHistory.FirstOrDefault(content => content.Content?.StartsWith(GetPromptTag()) ?? false);
-        if (chatMessageContent != null)
+        if (promptContent == null)
         {
-            chatMessageContent.Content = content;
-            return;
+            //尝试获取老提示词注入点
+            promptContent = target.ChatHistory.FirstOrDefault(content => content.Content?.StartsWith(GetPromptTag()) ?? false);
+            if (promptContent == null)
+            {
+                //需要创建新的
+                (ChatMessageContent item, int index) = target.ChatHistory
+                    .Select((item, index) => (item, index))
+                    .LastOrDefault(x => x.item.Role == AuthorRole.System);
+                promptContent = new ChatMessageContent(AuthorRole.System, "");
+                target.EditChatHistory(thread => {
+                    thread.ChatHistory.Insert(item == null ? 0 : index + 1, promptContent);
+                }, "注入提示词");
+            }
         }
 
-        (ChatMessageContent item, int index) = target.ChatHistory
-            .Select((item, index) => (item, index))
-            .FirstOrDefault(x => x.item.Role == AuthorRole.System);
-
-        target.EditChatHistory(thread => {
-            if (item == null)
-                thread.ChatHistory.AddSystemMessage(content);
-            else
-                thread.ChatHistory.Insert(index + 1, new ChatMessageContent(AuthorRole.System, content));
-        }, "注入提示词");
-    }
-    public void Throw(string error)
-    {
-        throw new Exception($"[{typeof(T).Name}] 发生错误\n{error}");
+        string content = $"{GetPromptTag()}\n{prompt}";
+        promptContent.Content = content;
     }
     public void Poke(string message)
     {
-        target.Poke(ChatTextFilter(message));
+        target.Poke(ChatTextFilter(GetMessageTag() + message));
     }
     public void Chat(string message)
     {
-        target.Chat(ChatTextFilter(message));
+        target.Chat(ChatTextFilter(GetMessageTag() + message));
     }
-    public Task<string> ChatAsync(string message)
+    public Task<ChatResult> ChatAsync(string message)
     {
-        return target.ChatAsync(ChatTextFilter(message));
+        return target.ChatAsync(ChatTextFilter(GetMessageTag() + message));
+    }
+
+    ChatMessageContent? promptContent;
+
+    public void Dispose()
+    {
+        if (promptContent != null)
+            target.EditChatHistory(thread => thread.ChatHistory.Remove(promptContent), "卸载提示词");
     }
 }

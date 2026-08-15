@@ -25,6 +25,12 @@ public record struct TokenUsage
 
 public interface ILanguageModel
 {
+    static readonly OccupationNotepad DefaultThinkingRequester = new();
+
+    public OccupationNotepad GetThinkingRequester()
+    {
+        return DefaultThinkingRequester;
+    }
     public Task<string> ChatStreamingAsync(
         ChatHistoryAgentThread chatHistoryAgentThread,
         Action<string>? textReceived = null,

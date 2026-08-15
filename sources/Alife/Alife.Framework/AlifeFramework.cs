@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
+using System.Threading.Tasks;
 using Alife.Foundation;
 using Alife.PluginMarket;
 using Alife.PluginContext;
@@ -31,8 +32,7 @@ public static class AlifeFramework
         Directory.CreateDirectory(pluginCompliedDirectory);
         Directory.CreateDirectory(pluginMarketDirectory);
 
-        services.AddSingleton<CSharpCompiler>(_ =>
-        {
+        services.AddSingleton<CSharpCompiler>(_ => {
             CSharpCompiler compiler = new();
             //立即加载软件依赖的所有程序集，这样就可以获取到dotnet运行时的dll，以便用于插件功能
             LoadAssemblyChain(Assembly.GetEntryAssembly()!);
@@ -98,8 +98,11 @@ public static class AlifeFramework
         services.AddSingleton<CharacterSystem>();
         services.AddSingleton<ChatActivitySystem>();
     }
-    public static void InitAlife(this IServiceProvider provider)
+    public static async Task InitAlife(this IServiceProvider provider)
     {
+        //日志拦截功能
+        AlifeLog.SetupConsoleCapture();
+
         //网络镜像功能
         AlifeMirror.SetupEnvironment();
 
@@ -111,8 +114,7 @@ public static class AlifeFramework
             PluginMarket.PluginMarket pluginMarket = provider.GetRequiredService<PluginMarket.PluginMarket>();
 
             //nuget环境变动时需要同步程序集环境
-            nugetEnvironmentInstaller.PackagesUpdatedAsync += async () =>
-            {
+            nugetEnvironmentInstaller.PackagesUpdatedAsync += async () => {
                 HashSet<string> defaultAssemblies = AssemblyLoadContext.Default.Assemblies
                     .Select(assembly => assembly.GetName().Name)
                     .Where(name => !string.IsNullOrEmpty(name))
@@ -140,16 +142,14 @@ public static class AlifeFramework
             };
 
             //兼容老版本的插件信息
-            pluginMarket.PluginInstalled += (pluginPackage, version) =>
-            {
+            pluginMarket.PluginInstalled += (pluginPackage, version) => {
                 if (File.Exists(pluginContext.GetPluginManifestPath(pluginPackage.Id)) == false)
                 {
                     string versionFile = Path.Combine(pluginContext.GetPluginDirectoryPath(pluginPackage.Id), "VERSION.txt");
                     File.WriteAllText(versionFile, version);
                 }
             };
-            pluginContext.PluginManifestFallback = pluginId =>
-            {
+            pluginContext.PluginManifestFallback = pluginId => {
                 string versionFile = Path.Combine(pluginContext.GetPluginDirectoryPath(pluginId), "VERSION.txt");
                 string? version = File.Exists(versionFile) ? File.ReadAllText(versionFile) : null;
                 PluginPackage? pluginPackage = pluginMarket.AllPluginPackages.GetValueOrDefault(pluginId);
@@ -161,5 +161,17 @@ public static class AlifeFramework
                 };
             };
         }
+
+        //检测版本更新后需重置dll
+        PluginSystem pluginSystem = provider.GetRequiredService<PluginSystem>();
+        string lastClientVersion = AlifeConfig.GetString("ClientVersion");
+        if (lastClientVersion != pluginSystem.ClientVersion)
+        {
+            await pluginSystem.PluginContext.ClearAllPluginDll();
+            AlifeConfig.SetString("ClientVersion", pluginSystem.ClientVersion);
+        }
+
+        //激活 MCP 服务，使外部程序可以通过 MCP 调用 Alife 系统能力
+        await AlifeMcp.StartAsync(provider);
     }
 }

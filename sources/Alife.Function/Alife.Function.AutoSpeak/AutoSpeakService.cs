@@ -19,7 +19,7 @@ namespace Alife.Function.AutoSpeak;
     LaunchOrder = 50)]
 public class AutoSpeakService(
     XmlFunctionCaller functionCaller,
-    IInteractor<AutoSpeakService> interactor,
+    Interactor<AutoSpeakService> interactor,
     ILogger<AutoSpeakService> logger) :
     ChatBehaviour
 {

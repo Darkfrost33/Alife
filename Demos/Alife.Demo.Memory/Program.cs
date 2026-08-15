@@ -63,7 +63,9 @@ static void PrintHistoryStructure(IReadOnlyList<ChatMessageContent> history)
                 Console.Write($"[{msg.Role.ToString().ToUpper(),-12}] ");
             }
 
-            string preview = msg.Content?.Length > 60 ? msg.Content.Substring(0, 57).Replace("\n", " ") + "..." : msg.Content?.Replace("\n", " ") ?? "";
+            string preview = msg.Content?.Length > 60
+                ? msg.Content.Substring(0, 57).Replace("\n", " ") + "..."
+                : msg.Content?.Replace("\n", " ") ?? "";
             Console.WriteLine(preview);
         }
         Console.WriteLine("----------------------------------------------------------------------\n");
