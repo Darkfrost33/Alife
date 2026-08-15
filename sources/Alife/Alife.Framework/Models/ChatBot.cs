@@ -132,83 +132,89 @@ public class ChatBot : IAsyncDisposable
 
             // ChatSent handlers may cancel this turn after keeping the user message in
             // history (for example, a non-primary voice responder in a chat room).
-            // Do not rely on every language model implementation to observe a token
-            // that was already cancelled before the streaming call starts.
-            cancellationToken.ThrowIfCancellationRequested();
-
+            // Still run ChatFinished* so occupation markers / executors are released;
+            // do not start model streaming on an already-cancelled token.
             Exception? error = null;
             TokenUsage tokenUsage = new();
             string aiMessage = "";
-            //装载AI消息
-            await EditChatHistoryAsync(async thread => {
-                aiMessage = await languageModel.ChatStreamingAsync(
-                    thread,
-                    text => {
-                        try
-                        {
-                            ChatReceived?.Invoke(text);
-                        }
-                        catch (Exception e)
-                        {
-                            AlifeLog.LogError(e);
-                        }
-                    },
-                    think => {
-                        try
-                        {
-                            ReasoningReceived?.Invoke(think);
-                        }
-                        catch (Exception e)
-                        {
-                            AlifeLog.LogError(e);
-                        }
-                    },
-                    usage => {
-                        tokenUsage += usage;
-                    },
-                    exception => {
-                        if (exception is not OperationCanceledException)
-                            error = exception;
-                    },
-                    cancellationToken
-                );
-                ChaseChatHistory();
-            }, "接收回复");
+            bool generationSkipped = cancellationToken.IsCancellationRequested;
+
+            if (generationSkipped == false)
+            {
+                //装载AI消息
+                await EditChatHistoryAsync(async thread => {
+                    aiMessage = await languageModel.ChatStreamingAsync(
+                        thread,
+                        text => {
+                            try
+                            {
+                                ChatReceived?.Invoke(text);
+                            }
+                            catch (Exception e)
+                            {
+                                AlifeLog.LogError(e);
+                            }
+                        },
+                        think => {
+                            try
+                            {
+                                ReasoningReceived?.Invoke(think);
+                            }
+                            catch (Exception e)
+                            {
+                                AlifeLog.LogError(e);
+                            }
+                        },
+                        usage => {
+                            tokenUsage += usage;
+                        },
+                        exception => {
+                            if (exception is not OperationCanceledException)
+                                error = exception;
+                        },
+                        cancellationToken
+                    );
+                    ChaseChatHistory();
+                }, "接收回复");
+            }
 
             using (ResourceOccupiedReason.Rent("分析对话"))
             {
-                //对话通讯结束
-                try
+                if (generationSkipped == false)
                 {
-                    ChatOver?.Invoke();
-                }
-                catch (Exception e)
-                {
-                    AlifeLog.LogError(e);
-                }
-
-                if (error != null)
-                {
+                    //对话通讯结束
                     try
                     {
-                        ChatExceptionThrow?.Invoke(error);
+                        ChatOver?.Invoke();
+                    }
+                    catch (Exception e)
+                    {
+                        AlifeLog.LogError(e);
+                    }
+
+                    if (error != null)
+                    {
+                        try
+                        {
+                            ChatExceptionThrow?.Invoke(error);
+                        }
+                        catch (Exception ex)
+                        {
+                            AlifeLog.LogError(ex);
+                        }
+                    }
+                    try
+                    {
+                        AlifeLog.LogInformation("[ChatBot] " + tokenUsage);
+                        TokenUsed?.Invoke(tokenUsage);
                     }
                     catch (Exception ex)
                     {
                         AlifeLog.LogError(ex);
                     }
                 }
-                try
-                {
-                    AlifeLog.LogInformation("[ChatBot] " + tokenUsage);
-                    TokenUsed?.Invoke(tokenUsage);
-                }
-                catch (Exception ex)
-                {
-                    AlifeLog.LogError(ex);
-                }
 
-                //对话完全结束
+                //对话完全结束（含 ChatSent 后立即取消的短路径，必须通知订阅方释放占用）
                 {
                     ChatContext chatContext = new() {
                         UserMessage = message,

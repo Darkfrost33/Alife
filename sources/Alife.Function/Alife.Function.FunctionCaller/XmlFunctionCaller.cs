@@ -182,12 +182,25 @@ public class XmlFunctionCaller(
 
     protected override async Task OnDestroy()
     {
+        ChatBot.ChatSent -= OnChatSent;
+        ChatBot.ChatReceived -= OnChatReceived;
+        ChatBot.ChatFinishedAsync -= OnChatFinishedAsync;
+
         await executor.CancelAndClearAsync();
         await executor.DisposeAsync();
+
+        if (occupationMarker != null)
+        {
+            ChatBot.ResourceOccupiedReason.Return(occupationMarker);
+            occupationMarker = null;
+        }
     }
 
     void OnChatSent(string obj)
     {
+        //上一轮若异常退出未归还，先清掉，避免占用标记堆积导致输入框一直显示「函数执行」
+        if (occupationMarker != null)
+            ChatBot.ResourceOccupiedReason.Return(occupationMarker);
         occupationMarker = ChatBot.ResourceOccupiedReason.Rent("函数执行");
     }
     void OnChatReceived(string obj)
@@ -196,18 +209,29 @@ public class XmlFunctionCaller(
     }
     async Task OnChatFinishedAsync(ChatContext chatContext)
     {
+        OccupationMarker? marker = occupationMarker;
         try
         {
-            await executor.WaitToInactive(chatContext.CancellationToken);
-            executor.Flush(); //清理缓冲区，内部可能带有残留数据
+            try
+            {
+                await executor.WaitToInactive(chatContext.CancellationToken);
+                executor.Flush(); //清理缓冲区，内部可能带有残留数据
+            }
+            catch (OperationCanceledException)
+            {
+                //对话被打断，取消执行
+                await executor.CancelAndClearAsync();
+            }
         }
-        catch (OperationCanceledException)
+        finally
         {
-            //对话被打断，取消执行
-            await executor.CancelAndClearAsync();
+            if (marker != null)
+            {
+                ChatBot.ResourceOccupiedReason.Return(marker);
+                if (ReferenceEquals(occupationMarker, marker))
+                    occupationMarker = null;
+            }
         }
-
-        ChatBot.ResourceOccupiedReason.Return(occupationMarker!);
 
         if (ChatCalled != null)
         {
@@ -231,7 +255,9 @@ public class XmlFunctionCaller(
     }
     void OnHandling(string name, XmlContext context)
     {
-        occupationMarker!.Reason = $"执行{name}函数";
+        // ChatFinished 可能已归还占用标记，但标签收尾/迟到回调仍会进入这里；不能抛 NRE 打断 speak。
+        if (occupationMarker != null)
+            occupationMarker.Reason = $"执行{name}函数";
         if (context.CallMode == CallMode.Opening || context.CallMode == CallMode.OneShot)
         {
             //实现当ai调用隐射函数时自动注入对应的隐式文档
