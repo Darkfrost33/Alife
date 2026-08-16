@@ -39,7 +39,7 @@ public class ChatRoomConfig
 [Description("聊天室功能：所有同时激活的角色共处一室，管理员和成员说的话全员可闻。")]
 public class ChatRoomService(
     XmlFunctionCaller functionService,
-    IInteractor<ChatRoomService> interactor) :
+    Interactor<ChatRoomService> interactor) :
     ChatBehaviour,
     IConfigurable<ChatRoomConfig>
 {
@@ -190,7 +190,8 @@ public class ChatRoomService(
 
     /// <summary>
     /// 监听发往本角色的消息，识别出用户发言后转播给聊天室其他成员。
-    /// 用户消息的判定依据是各交互模块统一附带的"消息来源:[Xxx]"标记。
+    /// 用户消息的判定依据是各交互模块统一附带的来源标记：
+    /// 新格式 <c>[消息来源(Xxx)]</c>，以及聊天窗口仍在使用的旧格式 <c>消息来源:[Xxx]</c>。
     /// 注意 ChatSent 收到的是过滤后的最终消息，MessageFilter 等模块可能已在首尾追加时间戳、提示词。
     /// </summary>
     void OnChatSent(string message)
@@ -202,16 +203,13 @@ public class ChatRoomService(
         if (message.Contains(ChatBot.PokeMessageTag))
             return;
 
-        Match match = SourceRegex.Match(message);
-        if (match.Success == false)
+        if (TryGetMessageSource(message, out string source, out int tagEnd) == false)
             return;
-
-        string source = match.Groups["src"].Value;
         if (IsInSourceList(Configuration.UserSources, source) == false)
             return;
 
         //取来源标记之后的正文，并剔除尾部由过滤器追加的"(xxx)"格式提示词
-        string content = message.Substring(match.Index + match.Length).Trim();
+        string content = message.Substring(tagEnd).Trim();
         content = TrailingHintRegex.Replace(content, "").Trim();
         if (content.Length == 0)
             return;
@@ -237,6 +235,24 @@ public class ChatRoomService(
             .Any(item => item.Equals(source, StringComparison.OrdinalIgnoreCase));
     }
 
-    static readonly Regex SourceRegex = new(@"消息来源:\[(?<src>[^\]]+)\]\s*", RegexOptions.Compiled);
+    static bool TryGetMessageSource(string message, out string source, out int tagEnd)
+    {
+        Match match = SourceRegex.Match(message);
+        if (match.Success == false)
+        {
+            source = "";
+            tagEnd = 0;
+            return false;
+        }
+
+        source = match.Groups["src"].Value;
+        tagEnd = match.Index + match.Length;
+        return string.IsNullOrEmpty(source) == false;
+    }
+
+    // 兼容 Interactor.GetMessageTag() 的 [消息来源(Xxx)]，以及 ChatWindow 的 消息来源:[Xxx]
+    static readonly Regex SourceRegex = new(
+        @"\[消息来源\((?<src>[^)]+)\)\]\s*|消息来源:\[(?<src>[^\]]+)\]\s*",
+        RegexOptions.Compiled);
     static readonly Regex TrailingHintRegex = new(@"(?:\n\([^)]*\))+$", RegexOptions.Compiled);
 }

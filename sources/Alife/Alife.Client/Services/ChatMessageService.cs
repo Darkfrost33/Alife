@@ -4,7 +4,10 @@ namespace Alife.Components.Services;
 
 public class ChatSettings
 {
-    public string UserTag { get; set; } = "消息来源:[ChatWindow]";
+    public const string LegacyDefaultUserTag = "消息来源:[ChatWindow]";
+    public const string DefaultUserTag = "[消息来源(ChatWindow)]";
+
+    public string UserTag { get; set; } = DefaultUserTag;
     public int MaxMessageCount { get; set; } = 100;
     public bool ShowReasoning { get; set; } = true;
 }
@@ -64,6 +67,12 @@ public class ChatMessageService
     {
         this.storage = storage;
         settings = storage.GetObject(SettingsKey, new ChatSettings())!;
+        // 未自定义过的旧默认标记迁到与 Interactor.GetMessageTag 一致的格式
+        if (settings.UserTag == ChatSettings.LegacyDefaultUserTag)
+        {
+            settings.UserTag = ChatSettings.DefaultUserTag;
+            SaveSettings();
+        }
         system.ActivatingCreated += OnActivityCreated;
         system.Destroyed += OnActivityDestroyed;
         system.ActivationFailed += OnActivationFailed;

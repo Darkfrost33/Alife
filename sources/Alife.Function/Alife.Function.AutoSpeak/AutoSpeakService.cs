@@ -1,10 +1,10 @@
 using System;
-using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using System.Threading.Tasks;
 using Alife.Framework;
 using Alife.Function.FunctionCaller;
+using Alife.Function.MessageFilter;
 using Microsoft.Extensions.Logging;
 
 namespace Alife.Function.AutoSpeak;
@@ -25,6 +25,7 @@ public class AutoSpeakService(
 {
     bool wrapThisTurn;
     bool decidedThisTurn;
+    List<MessageReplyRule>? disabledSpeakRules;
 
     protected override Task OnAwake()
     {
@@ -55,6 +56,7 @@ public class AutoSpeakService(
         ChatBot.ChatSent -= OnChatSent;
         ChatBot.ChatReceived -= OnChatReceived;
         ChatBot.ChatOver -= OnChatOver;
+        RestoreSpeakCorrectionRules();
         return Task.CompletedTask;
     }
 
@@ -110,45 +112,51 @@ public class AutoSpeakService(
     }
 
     /// <summary>
-    /// MessageFilter 检查的是模型原文（不含我们注入的标签），会误催加 speak；启用本模块时关掉相关规则。
+    /// MessageFilter 检查的是模型原文（不含我们注入的标签），会误催加 speak；启用本模块时从生效列表里拿掉相关规则。
     /// </summary>
     void DisableSpeakCorrectionRules()
     {
-        object? filter = ChatActivity.Container.Instances
-            .FirstOrDefault(instance => instance.GetType().Name == "MessageFilterService");
+        MessageFilterService? filter = ChatActivity.Container.Instances
+            .OfType<MessageFilterService>()
+            .FirstOrDefault();
         if (filter == null)
             return;
 
-        PropertyInfo? configProperty = filter.GetType().GetProperty("Configuration");
-        object? configuration = configProperty?.GetValue(filter);
-        if (configuration == null)
+        disabledSpeakRules = filter.RemoveMessageReplyRules(IsSpeakCorrectionRule);
+        if (disabledSpeakRules.Count > 0)
+            logger.LogInformation("自动朗读：已关闭 {Count} 条 MessageFilter 的 speak 纠正规则。", disabledSpeakRules.Count);
+    }
+
+    void RestoreSpeakCorrectionRules()
+    {
+        if (disabledSpeakRules is not { Count: > 0 })
             return;
 
-        PropertyInfo? rulesProperty = configuration.GetType().GetProperty("MessageReplyRules");
-        if (rulesProperty?.GetValue(configuration) is not IEnumerable rules)
-            return;
-
-        int disabled = 0;
-        foreach (object? rule in rules)
+        MessageFilterService? filter = ChatActivity.Container.Instances
+            .OfType<MessageFilterService>()
+            .FirstOrDefault();
+        if (filter != null)
         {
-            if (rule == null)
-                continue;
-
-            PropertyInfo? outputRegexProperty = rule.GetType().GetProperty("OutputRegex");
-            string? outputRegex = outputRegexProperty?.GetValue(rule) as string;
-            if (string.IsNullOrEmpty(outputRegex) ||
-                outputRegex.Contains("speak", StringComparison.OrdinalIgnoreCase) == false)
-                continue;
-
-            PropertyInfo? enabledProperty = rule.GetType().GetProperty("Enabled");
-            if (enabledProperty == null || enabledProperty.PropertyType != typeof(bool))
-                continue;
-
-            enabledProperty.SetValue(rule, false);
-            disabled++;
+            foreach (MessageReplyRule rule in disabledSpeakRules)
+                filter.AddMessageReplyRule(rule);
         }
 
-        if (disabled > 0)
-            logger.LogInformation("自动朗读：已关闭 {Count} 条 MessageFilter 的 speak 纠正规则。", disabled);
+        disabledSpeakRules = null;
+    }
+
+    static bool IsSpeakCorrectionRule(MessageReplyRule rule)
+    {
+        if (rule.Name.Contains("speak", StringComparison.OrdinalIgnoreCase) ||
+            rule.Name.Contains("DeskPet", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        try
+        {
+            return rule.CorrectionMessage().Contains("speak", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
     }
 }

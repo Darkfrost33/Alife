@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -55,6 +56,16 @@ public partial class MessageFilterService(
             messageReplyRules.Remove(messageReplyRule);
         }
     }
+
+    /// <summary>移除已生效的回复规则，返回被移除的条目（可在之后再加回去）。</summary>
+    public List<MessageReplyRule> RemoveMessageReplyRules(Func<MessageReplyRule, bool> match)
+    {
+        List<MessageReplyRule> removed = messageReplyRules.Where(match).ToList();
+        foreach (MessageReplyRule rule in removed)
+            messageReplyRules.Remove(rule);
+        return removed;
+    }
+
     public void AddMessageReplyRule(RegexMessageReplyRule regexMessageReplyRule, CancellationToken cancellationToken = default)
     {
         MessageReplyRule messageReplyRule = new MessageReplyRule() {
