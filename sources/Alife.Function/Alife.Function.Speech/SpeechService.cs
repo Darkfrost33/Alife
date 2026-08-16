@@ -30,6 +30,11 @@ public class SpeechService(
     public SpeechServiceConfig Configuration { get; set; } = null!;
     public bool IsSpeaking => activeTurn is { Completion.IsCompleted: false };
 
+    /// <summary>
+    /// 为 true 时，() / （） 内的内容不送入语音合成（气泡等其它 speak 订阅方不受影响）。
+    /// </summary>
+    public bool OmitParentheticalText { get; set; }
+
     [XmlFunction(FunctionMode.Content, order: -10)]
     [Description("将文本以语音方式输出（这应该是你默认对外的交互方式）")]
     public Task Speak(XmlExecutorContext context, CancellationToken cancellationToken)
@@ -39,16 +44,18 @@ public class SpeechService(
             switch (context.CallMode)
             {
                 case CallMode.Opening:
+                    parentheticalDepth = 0;
                     GetOrCreateLatencyTrace()?.MarkSpeakOpened();
                     EnsureTurn(cancellationToken);
                     break;
                 case CallMode.Closing:
+                    parentheticalDepth = 0;
                     if (activeTurn is StreamingSpeechTurn streamingTurn)
                         streamingTurn.Flush();
                     break;
                 case CallMode.Content:
                 {
-                    string content = context.Content.Trim();
+                    string content = FilterParenthetical(context.Content).Trim();
                     if (!string.IsNullOrWhiteSpace(content) && activeTurn is BufferedSpeechTurn bufferedTurn)
                         bufferedTurn.AddSegment(content);
                     break;
@@ -100,6 +107,7 @@ public class SpeechService(
     readonly object turnLock = new();
     SpeechTurn? activeTurn;
     SpeechLatencyTrace? activeLatencyTrace;
+    int parentheticalDepth;
 
     bool StreamingRequested => Configuration.StreamingMode != SpeechStreamingMode.BufferedFile;
 
@@ -141,6 +149,9 @@ public class SpeechService(
         if (!content.CallChain.Contains("speak"))
             return;
 
+        if (!ShouldSpeakCharacter(content.Character))
+            return;
+
         StreamingSpeechTurn? turn;
         lock (turnLock)
             turn = activeTurn as StreamingSpeechTurn;
@@ -151,6 +162,41 @@ public class SpeechService(
         turn.AddText(content.Character.ToString());
         if (IsStrongPunctuation(content.Character))
             turn.Flush();
+    }
+
+    string FilterParenthetical(string text)
+    {
+        if (!OmitParentheticalText || string.IsNullOrEmpty(text))
+            return text;
+
+        StringBuilder result = new(text.Length);
+        foreach (char ch in text)
+        {
+            if (ShouldSpeakCharacter(ch))
+                result.Append(ch);
+        }
+
+        return result.ToString();
+    }
+
+    bool ShouldSpeakCharacter(char ch)
+    {
+        if (!OmitParentheticalText)
+            return true;
+
+        if (ch is '(' or '（')
+        {
+            parentheticalDepth++;
+            return false;
+        }
+
+        if ((ch is ')' or '）') && parentheticalDepth > 0)
+        {
+            parentheticalDepth--;
+            return false;
+        }
+
+        return parentheticalDepth == 0;
     }
 
     void OnChatSent(string _)

@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Alife.Framework;
 using Alife.Function.FunctionCaller;
 using Alife.Function.MessageFilter;
+using Alife.Function.Speech;
 using Microsoft.Extensions.Logging;
 
 namespace Alife.Function.AutoSpeak;
@@ -12,9 +13,10 @@ namespace Alife.Function.AutoSpeak;
 /// <summary>
 /// 启用后：把本轮 AI 的纯文本输出自动包进 &lt;speak&gt;，走现有 Speech / DeskPet 路径。
 /// 若模型自己已经写了 &lt;speak&gt;，则不再包一层。
+/// 括号 () / （） 内的内容不会送入语音合成（气泡仍可显示）。
 /// </summary>
 [Module("自动朗读",
-    "启用后，AI 全部对外输出都会自动包进 <speak>，无需模型自己写标签。请同时启用「语音说话」和/或「桌宠交互」。",
+    "启用后，AI 全部对外输出都会自动包进 <speak>，无需模型自己写标签。括号内文字不朗读。请同时启用「语音说话」和/或「桌宠交互」。",
     defaultCategory: "Alife 官方/交互方式",
     LaunchOrder = 50)]
 public class AutoSpeakService(
@@ -26,6 +28,8 @@ public class AutoSpeakService(
     bool wrapThisTurn;
     bool decidedThisTurn;
     List<MessageReplyRule>? disabledSpeakRules;
+    SpeechService? speechService;
+    bool restoredSpeechFilter;
 
     protected override Task OnAwake()
     {
@@ -38,6 +42,7 @@ public class AutoSpeakService(
             """
             【自动朗读已启用】系统会把你的对外回复自动包进 <speak> 并朗读/显示气泡。
             请直接输出要对用户说的正文，不要自己写 <speak> 或 </speak>。
+            括号 () / （） 里的内容不会被朗读，可用来写表情说明或旁白。
             表情与动作仍可用 <expression/>、<motion/> 等标签穿插在正文中。
             """);
 
@@ -46,8 +51,9 @@ public class AutoSpeakService(
 
     protected override Task OnStart()
     {
-        // MessageFilter 可能比本模块更晚构造；OnStart 时实例已齐。
+        // MessageFilter / Speech 可能比本模块更晚构造；OnStart 时实例已齐。
         DisableSpeakCorrectionRules();
+        EnableParentheticalSpeechFilter();
         return Task.CompletedTask;
     }
 
@@ -57,7 +63,28 @@ public class AutoSpeakService(
         ChatBot.ChatReceived -= OnChatReceived;
         ChatBot.ChatOver -= OnChatOver;
         RestoreSpeakCorrectionRules();
+        RestoreParentheticalSpeechFilter();
         return Task.CompletedTask;
+    }
+
+    void EnableParentheticalSpeechFilter()
+    {
+        speechService = ChatActivity.Container.Instances.OfType<SpeechService>().FirstOrDefault();
+        if (speechService == null)
+            return;
+
+        speechService.OmitParentheticalText = true;
+        restoredSpeechFilter = false;
+    }
+
+    void RestoreParentheticalSpeechFilter()
+    {
+        if (restoredSpeechFilter || speechService == null)
+            return;
+
+        speechService.OmitParentheticalText = false;
+        restoredSpeechFilter = true;
+        speechService = null;
     }
 
     void OnChatSent(string _)
