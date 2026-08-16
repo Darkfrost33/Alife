@@ -7,6 +7,20 @@ namespace Alife.Function.Speech;
 public class SpeechSilenceTrimmer : ISampleProvider
 {
     public WaveFormat WaveFormat { get; }
+
+    /// <summary>按已裁掉首尾静音后的采样，估算还剩多少秒没播完。</summary>
+    public double RemainingSeconds
+    {
+        get
+        {
+            int remainingSamples = samples.Length - position;
+            int samplesPerSecond = WaveFormat.SampleRate * WaveFormat.Channels;
+            if (remainingSamples <= 0 || samplesPerSecond <= 0)
+                return 0;
+            return remainingSamples / (double)samplesPerSecond;
+        }
+    }
+
     readonly float[] samples;
     int position;
 

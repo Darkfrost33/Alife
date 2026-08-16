@@ -30,10 +30,39 @@ public class SpeechService(
     public SpeechServiceConfig Configuration { get; set; } = null!;
     public bool IsSpeaking => activeTurn is { Completion.IsCompleted: false };
 
+    /// <summary>当前是否真的在向声卡输出音频（区别于 IsSpeaking：等待门控/尚未收到首块音频时为 false）。</summary>
+    public bool IsPlayingAudio
+    {
+        get
+        {
+            lock (turnLock)
+                return activeTurn is { Playback.IsPlayingAudio: true };
+        }
+    }
+
+    /// <summary>
+    /// 估算当前这轮语音的剩余播放秒数。
+    /// 只有在“后续不会再有新音频”确定后才返回数值，否则返回 null（未知）。
+    /// </summary>
+    public double? EstimatedRemainingSpeechSeconds
+    {
+        get
+        {
+            lock (turnLock)
+                return activeTurn?.Playback.EstimatedRemainingSpeechSeconds;
+        }
+    }
+
     /// <summary>
     /// 为 true 时，() / （） 内的内容不送入语音合成（气泡等其它 speak 订阅方不受影响）。
     /// </summary>
     public bool OmitParentheticalText { get; set; }
+
+    /// <summary>
+    /// 播放门控：开始向声卡输出音频前轮询此委托，返回 true 才放行。
+    /// 为 null 时不生效。由外部模块（如 ChatRoom）反射注入。
+    /// </summary>
+    public Func<bool>? SpeechPlaybackGate { get; set; }
 
     [XmlFunction(FunctionMode.Content, order: -10)]
     [Description("将文本以语音方式输出（这应该是你默认对外的交互方式）")]
@@ -127,6 +156,7 @@ public class SpeechService(
                     Configuration,
                     activeLatencyTrace,
                     Configuration.StreamingMode == SpeechStreamingMode.Auto,
+                    () => SpeechPlaybackGate,
                     cancellationToken,
                     DestroyCancellationToken);
             }
@@ -138,6 +168,7 @@ public class SpeechService(
                 activeTurn = new BufferedSpeechTurn(
                     speechModel,
                     logger,
+                    () => SpeechPlaybackGate,
                     cancellationToken,
                     DestroyCancellationToken);
             }
@@ -264,18 +295,26 @@ public class SpeechService(
 
     abstract class SpeechTurn
     {
-        protected SpeechTurn(CancellationToken requestCancellation, CancellationToken destroyCancellation)
+        protected SpeechTurn(
+            Func<Func<bool>?> getPlaybackGate,
+            CancellationToken requestCancellation,
+            CancellationToken destroyCancellation,
+            PlaybackProgress? playback = null)
         {
+            this.getPlaybackGate = getPlaybackGate;
+            Playback = playback ?? new PlaybackProgress();
             cancellation = CancellationTokenSource.CreateLinkedTokenSource(
                 requestCancellation,
                 destroyCancellation);
         }
 
+        public PlaybackProgress Playback { get; }
         public abstract Task Completion { get; }
         public abstract void Complete();
 
         public void Cancel() => cancellation.Cancel();
 
+        protected readonly Func<Func<bool>?> getPlaybackGate;
         protected readonly CancellationTokenSource cancellation;
     }
 
@@ -284,9 +323,11 @@ public class SpeechService(
         public BufferedSpeechTurn(
             SpeechModel speechModel,
             ILogger logger,
+            Func<Func<bool>?> getPlaybackGate,
             CancellationToken requestCancellation,
-            CancellationToken destroyCancellation) :
-            base(requestCancellation, destroyCancellation)
+            CancellationToken destroyCancellation,
+            PlaybackProgress? playback = null) :
+            base(getPlaybackGate, requestCancellation, destroyCancellation, playback)
         {
             this.speechModel = speechModel;
             this.logger = logger;
@@ -351,12 +392,62 @@ public class SpeechService(
             }
         }
 
-        static async Task PlayGeneratedAudioAsync(
+        async Task PlayGeneratedAudioAsync(
             ChannelReader<string> input,
             CancellationToken cancellationToken)
         {
             await foreach (string audioFile in input.ReadAllAsync(cancellationToken))
-                await PlayAudioFileAsync(audioFile, cancellationToken);
+                await PlayAudioFileAsync(audioFile, input, cancellationToken);
+        }
+
+        async Task PlayAudioFileAsync(
+            string filePath,
+            ChannelReader<string> audioQueue,
+            CancellationToken cancellationToken)
+        {
+            TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            await using AudioFileReader reader = new(filePath);
+            SpeechSilenceTrimmer silenceTrimmer = new(reader);
+            using WaveOutEvent speaker = new();
+            speaker.Init(silenceTrimmer);
+            speaker.PlaybackStopped += OnPlaybackStopped;
+
+            await WaitForPlaybackGateAsync(getPlaybackGate, logger, cancellationToken);
+
+            try
+            {
+                speaker.Play();
+                Playback.IsPlayingAudio = true;
+                Playback.SetRemainingSecondsProvider(() => {
+                    if (textQueue.Reader.Completion.IsCompleted == false)
+                        return null;
+                    if (audioQueue.Completion.IsCompleted == false)
+                        return null;
+                    if (audioQueue.CanCount == false || audioQueue.Count != 0)
+                        return null;
+                    return silenceTrimmer.RemainingSeconds;
+                });
+
+                await using CancellationTokenRegistration registration =
+                    cancellationToken.Register(() => speaker.Stop());
+                await completion.Task;
+            }
+            finally
+            {
+                Playback.IsPlayingAudio = false;
+                Playback.SetRemainingSecondsProvider(null);
+            }
+
+            void OnPlaybackStopped(object? _, StoppedEventArgs e)
+            {
+                if (e.Exception != null)
+                    completion.TrySetException(e.Exception);
+                else if (cancellationToken.IsCancellationRequested)
+                    completion.TrySetCanceled(cancellationToken);
+                else
+                    completion.TrySetResult();
+            }
         }
     }
 
@@ -369,9 +460,10 @@ public class SpeechService(
             SpeechServiceConfig configuration,
             SpeechLatencyTrace? latencyTrace,
             bool allowInitialFallback,
+            Func<Func<bool>?> getPlaybackGate,
             CancellationToken requestCancellation,
             CancellationToken destroyCancellation) :
-            base(requestCancellation, destroyCancellation)
+            base(getPlaybackGate, requestCancellation, destroyCancellation)
         {
             this.streamingModel = streamingModel;
             this.fallbackModel = fallbackModel;
@@ -451,6 +543,9 @@ public class SpeechService(
                     session.ReceiveAudioAsync(operationCancellation.Token),
                     session.AudioFormat,
                     latencyTrace,
+                    Playback,
+                    getPlaybackGate,
+                    logger,
                     operationCancellation.Token);
                 Task sender = SendCommandsAsync(session, operationCancellation.Token);
 
@@ -542,8 +637,10 @@ public class SpeechService(
             BufferedSpeechTurn fallback = new(
                 fallbackModel,
                 logger,
+                getPlaybackGate,
                 cancellationToken,
-                cancellationToken);
+                cancellationToken,
+                Playback);
             StringBuilder segment = new();
 
             await foreach (StreamingCommand command in commands.Reader.ReadAllAsync(cancellationToken))
@@ -578,36 +675,53 @@ public class SpeechService(
 
     readonly record struct StreamingCommand(StreamingCommandType Type, string Text = "");
 
-    static async Task PlayAudioFileAsync(string filePath, CancellationToken cancellationToken)
+    static async Task WaitForPlaybackGateAsync(
+        Func<Func<bool>?> getPlaybackGate,
+        ILogger logger,
+        CancellationToken cancellationToken)
     {
-        TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Func<bool>? gate = getPlaybackGate();
+        if (gate == null)
+            return;
 
-        await using AudioFileReader reader = new(filePath);
-        SpeechSilenceTrimmer silenceTrimmer = new(reader);
-        using WaveOutEvent speaker = new();
-        speaker.Init(silenceTrimmer);
-        speaker.PlaybackStopped += OnPlaybackStopped;
-        speaker.Play();
-
-        await using CancellationTokenRegistration registration =
-            cancellationToken.Register(() => speaker.Stop());
-        await completion.Task;
-
-        void OnPlaybackStopped(object? _, StoppedEventArgs e)
+        DateTime start = DateTime.Now;
+        while (gate() == false)
         {
-            if (e.Exception != null)
-                completion.TrySetException(e.Exception);
-            else if (cancellationToken.IsCancellationRequested)
-                completion.TrySetCanceled(cancellationToken);
-            else
-                completion.TrySetResult();
+            if ((DateTime.Now - start).TotalSeconds >= PlaybackGateTimeoutSeconds)
+            {
+                logger.LogWarning("语音播放门控等待超时，已强制放行。");
+                return;
+            }
+            await Task.Delay(PlaybackGatePollMilliseconds, cancellationToken);
         }
+    }
+
+    static bool TryPassPlaybackGate(
+        Func<Func<bool>?> getPlaybackGate,
+        DateTime waitStart,
+        ILogger logger,
+        ref bool timeoutLogged)
+    {
+        Func<bool>? gate = getPlaybackGate();
+        if (gate == null || gate())
+            return true;
+        if ((DateTime.Now - waitStart).TotalSeconds < PlaybackGateTimeoutSeconds)
+            return false;
+        if (timeoutLogged == false)
+        {
+            timeoutLogged = true;
+            logger.LogWarning("语音播放门控等待超时，已强制放行。");
+        }
+        return true;
     }
 
     static async Task PlayPcmStreamAsync(
         IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
         SpeechStreamFormat format,
         SpeechLatencyTrace? latencyTrace,
+        PlaybackProgress playback,
+        Func<Func<bool>?> getPlaybackGate,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         if (format.BitsPerSample != 16)
@@ -617,7 +731,7 @@ public class SpeechService(
             format.SampleRate,
             format.BitsPerSample,
             format.Channels)) {
-            BufferDuration = TimeSpan.FromSeconds(30),
+            BufferDuration = TimeSpan.FromSeconds(90),
             DiscardOnBufferOverflow = false,
             ReadFully = true,
         };
@@ -625,29 +739,100 @@ public class SpeechService(
         speaker.Init(buffer);
 
         bool started = false;
+        bool timeoutLogged = false;
+        DateTime gateWaitStart = DateTime.MinValue;
         await using CancellationTokenRegistration registration =
             cancellationToken.Register(() => speaker.Stop());
 
-        await foreach (ReadOnlyMemory<byte> chunk in chunks.WithCancellation(cancellationToken))
+        try
         {
-            if (chunk.IsEmpty)
-                continue;
-
-            latencyTrace?.MarkFirstAudioReceived();
-            byte[] bytes = chunk.ToArray();
-            buffer.AddSamples(bytes, 0, bytes.Length);
-            if (!started)
+            await foreach (ReadOnlyMemory<byte> chunk in chunks.WithCancellation(cancellationToken))
             {
+                if (chunk.IsEmpty)
+                    continue;
+
+                latencyTrace?.MarkFirstAudioReceived();
+                byte[] bytes = chunk.ToArray();
+                buffer.AddSamples(bytes, 0, bytes.Length);
+                if (started)
+                    continue;
+
+                if (gateWaitStart == DateTime.MinValue)
+                    gateWaitStart = DateTime.Now;
+                if (TryPassPlaybackGate(getPlaybackGate, gateWaitStart, logger, ref timeoutLogged) == false)
+                    continue;
+
                 speaker.Play();
                 latencyTrace?.MarkPlaybackStarted();
+                playback.IsPlayingAudio = true;
                 started = true;
+            }
+
+            if (started == false && buffer.BufferedBytes > 0)
+            {
+                await WaitForPlaybackGateAsync(getPlaybackGate, logger, cancellationToken);
+                speaker.Play();
+                latencyTrace?.MarkPlaybackStarted();
+                playback.IsPlayingAudio = true;
+                started = true;
+            }
+
+            if (started)
+            {
+                playback.SetRemainingSecondsProvider(() =>
+                    buffer.BufferedBytes / (double)(format.SampleRate * format.Channels * 2));
+            }
+
+            while (started && buffer.BufferedBytes > 0)
+                await Task.Delay(20, cancellationToken);
+
+            if (started)
+                speaker.Stop();
+        }
+        finally
+        {
+            playback.IsPlayingAudio = false;
+            playback.SetRemainingSecondsProvider(null);
+        }
+    }
+
+    const double PlaybackGateTimeoutSeconds = 15;
+    const int PlaybackGatePollMilliseconds = 100;
+
+    sealed class PlaybackProgress
+    {
+        public bool IsPlayingAudio
+        {
+            get => isPlayingAudio;
+            set => isPlayingAudio = value;
+        }
+
+        public double? EstimatedRemainingSpeechSeconds
+        {
+            get
+            {
+                Func<double?>? provider;
+                lock (remainingLock)
+                    provider = remainingSecondsProvider;
+                try
+                {
+                    return provider?.Invoke();
+                }
+                catch
+                {
+                    return null;
+                }
             }
         }
 
-        while (started && buffer.BufferedBytes > 0)
-            await Task.Delay(20, cancellationToken);
+        public void SetRemainingSecondsProvider(Func<double?>? provider)
+        {
+            lock (remainingLock)
+                remainingSecondsProvider = provider;
+        }
 
-        if (started)
-            speaker.Stop();
+        volatile bool isPlayingAudio;
+        Func<double?>? remainingSecondsProvider;
+        readonly object remainingLock = new();
     }
 }

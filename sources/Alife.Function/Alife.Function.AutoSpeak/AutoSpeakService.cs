@@ -38,12 +38,11 @@ public class AutoSpeakService(
         ChatBot.ChatReceived += OnChatReceived;
         ChatBot.ChatOver += OnChatOver;
 
+        //只说明系统会代为包标签，不指导怎么写台词或旁白。
         interactor.Prompt(
             """
             【自动朗读已启用】系统会把你的对外回复自动包进 <speak> 并朗读/显示气泡。
             请直接输出要对用户说的正文，不要自己写 <speak> 或 </speak>。
-            括号 () / （） 里的内容不会被朗读，可用来写表情说明或旁白。
-            表情与动作仍可用 <expression/>、<motion/> 等标签穿插在正文中。
             """);
 
         return Task.CompletedTask;

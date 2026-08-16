@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Alife.Foundation;
 
 namespace Alife.Function.ChatRoom;
 
@@ -41,6 +42,8 @@ public static class ChatRoomHub
         {
             if (Members.Remove(member) == false)
                 return;
+            if (ReferenceEquals(currentTurnHolder, member))
+                currentTurnHolder = null;
             others = Members.ToArray();
         }
 
@@ -56,6 +59,63 @@ public static class ChatRoomHub
     }
 
     /// <summary>
+    /// 音频通道对该成员是否放行：没有其他成员正在出声，
+    /// 且当前发言权持有者为空、就是该成员，或持有者已经说完。
+    /// 成员数 &lt; 2 时恒为 true。
+    /// </summary>
+    public static bool IsAudioChannelFreeFor(ChatRoomService member)
+    {
+        ChatRoomService[] others;
+        ChatRoomService? holder;
+        lock (Lock)
+        {
+            if (Members.Count < 2)
+                return true;
+            holder = currentTurnHolder;
+            others = Members.Where(m => m != member).ToArray();
+        }
+
+        if (others.Any(m => m.IsAudibleNow))
+            return false;
+        if (holder == member)
+            return true;
+
+        //持有者空闲时把通道交给当前请求者，避免 stay_silent / 顺位链结束后卡住其他成员的语音。
+        //必须认领而不是清空持有者，否则多个等待者会同时看到通道空闲一起出声。
+        if (holder != null && (holder.IsAudibleNow || holder.IsBusyReplying))
+            return false;
+
+        lock (Lock)
+        {
+            if (Members.Count < 2)
+                return true;
+            ChatRoomService? latest = currentTurnHolder;
+            if (latest != null && latest != member && latest != holder)
+                return false;
+            currentTurnHolder = member;
+            return true;
+        }
+    }
+
+    /// <summary>将音频通道发言权记到该成员（即时回复或交棒投递时调用）。</summary>
+    public static void ClaimAudioTurn(ChatRoomService member)
+    {
+        lock (Lock)
+            currentTurnHolder = member;
+    }
+
+    static void ReleaseAudioTurn(ChatRoomService? holder)
+    {
+        if (holder == null)
+            return;
+        lock (Lock)
+        {
+            if (ReferenceEquals(currentTurnHolder, holder))
+                currentTurnHolder = null;
+        }
+    }
+
+    /// <summary>
     /// 判断该成员是否为语音发言的首位响应者（当前在场、有听力的成员中顺位最高者）。
     /// 其他带麦成员应放弃即时回应，等待Hub按顺位推送发言提示。
     /// </summary>
@@ -63,7 +123,7 @@ public static class ChatRoomHub
     {
         lock (Lock)
         {
-            ChatRoomService? primary = SortByRank(Members.Where(m => m.CanHearVoice)).FirstOrDefault();
+            ChatRoomService? primary = SortByRankUnlocked(Members.Where(m => m.CanHearVoice)).FirstOrDefault();
             return primary == null || primary == member;
         }
     }
@@ -78,11 +138,15 @@ public static class ChatRoomHub
     {
         ChatRoomService[] recipients;
         CancellationToken deliveryToken;
+        bool useModerator;
+        ChatRoomService? provider;
+        CancellationToken moderatorToken = CancellationToken.None;
         lock (Lock)
         {
             aiTalkStreak = 0;
             streakNoticeSent = false;
             lastSpeaker = null;
+            wrapUpPending = false;
 
             //短时间内的相同用户发言只转播一次。
             //防止用户在多个角色上同时启用语音识别时，同一句话被每个角色重复转播。
@@ -92,38 +156,60 @@ public static class ChatRoomHub
             lastUserContent = content;
             lastUserContentTime = now;
 
-            //用户有了新发言，还未送达的旧排队消息全部作废
+            //用户有了新发言，还未送达的旧排队消息全部作废，进行中的主持人决策也取消
             pendingDeliveries.Cancel();
             pendingDeliveries = new CancellationTokenSource();
             deliveryToken = pendingDeliveries.Token;
+            moderatorToken = RenewModeratorSessionUnlocked();
 
-            recipients = SortByRank(Members.Where(m => m != target)).ToArray();
+            AppendTranscriptUnlocked(userName, content);
+
+            recipients = SortByRankUnlocked(Members.Where(m => m != target));
+            provider = GetModeratorProviderUnlocked();
+            useModerator = Members.Count >= 2 && provider != null;
         }
 
-        int slot = 1;
+        if (useModerator == false)
+        {
+            int slot = 1;
+            foreach (ChatRoomService other in recipients)
+            {
+                string message;
+                if (directed)
+                {
+                    message = $"[聊天室] {userName} 对 {target.MemberName} 说：{content}\n" +
+                              "(你也在场并听到了这句话。想插话就正常发言；与你无关的话题保持沉默不回复即可)";
+                }
+                else if (other.CanHearVoice)
+                {
+                    //带麦成员已直接听到内容（在其上下文中），只需按顺位提示它现在可以发言
+                    message = $"[聊天室] 关于 {userName} 刚才的语音发言，现在轮到你回应了\n" +
+                              "(前面的成员可能已经回答过，注意衔接不要重复；与你无关或没有补充时保持沉默即可)";
+                }
+                else
+                {
+                    message = $"[聊天室] {userName}（语音，面向全场）说：{content}\n" +
+                              "(你也在场并听到了这句话。想插话就正常发言；与你无关的话题保持沉默不回复即可)";
+                }
+
+                ScheduleDelivery(other, message, other.ResponseDelaySeconds * slot, deliveryToken);
+                slot++;
+            }
+            return;
+        }
+
         foreach (ChatRoomService other in recipients)
         {
-            string message;
-            if (directed)
-            {
-                message = $"[聊天室] {userName} 对 {target.MemberName} 说：{content}\n" +
-                          "(你也在场并听到了这句话。想插话就正常发言；与你无关的话题保持沉默不回复即可)";
-            }
-            else if (other.CanHearVoice)
-            {
-                //带麦成员已直接听到内容（在其上下文中），只需按顺位提示它现在可以发言
-                message = $"[聊天室] 关于 {userName} 刚才的语音发言，现在轮到你回应了\n" +
-                          "(前面的成员可能已经回答过，注意衔接不要重复；与你无关或没有补充时保持沉默即可)";
-            }
-            else
-            {
-                message = $"[聊天室] {userName}（语音，面向全场）说：{content}\n" +
-                          "(你也在场并听到了这句话。想插话就正常发言；与你无关的话题保持沉默不回复即可)";
-            }
-
-            ScheduleDelivery(other, message, other.ResponseDelaySeconds * slot, deliveryToken);
-            slot++;
+            //带麦成员已从听力模块听到原话，再写入会变成同一句用户发言出现两次
+            if (directed == false && other.CanHearVoice)
+                continue;
+            string silentMessage = directed
+                ? $"[聊天室] {userName} 对 {target.MemberName} 说：{content}"
+                : $"[聊天室] {userName}（语音，面向全场）说：{content}";
+            other.ReceiveRoomContext(silentMessage);
         }
+
+        RunModeratorAndDeliver(target, recipients, provider!, isClosingRound: false, moderatorToken);
     }
 
     /// <summary>
@@ -139,35 +225,41 @@ public static class ChatRoomHub
                 await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
 
             DateTime waitStart = DateTime.Now;
-                while ((DateTime.Now - waitStart).TotalSeconds < MaxTurnWaitSeconds)
-                {
-                    ChatRoomService[] currentMembers;
-                    lock (Lock)
-                        currentMembers = Members.ToArray();
-                    if (currentMembers.Any(m => m != member && m.IsBusyReplying) == false)
-                        break;
-
-                    await Task.Delay(500, cancellationToken);
-                }
-
-                //收件人可能在排队期间离开了聊天室（角色被关闭），此时不能再投递，
-                //否则会在销毁流程中触发新的对话，导致关闭卡住
+            while ((DateTime.Now - waitStart).TotalSeconds < MaxTurnWaitSeconds)
+            {
+                ChatRoomService[] currentMembers;
                 lock (Lock)
-                {
-                    if (Members.Contains(member) == false)
-                        return;
-                }
+                    currentMembers = Members.ToArray();
+                if (currentMembers.Any(m => m != member && m.IsBusyReplying) == false)
+                    break;
 
-                member.MarkPendingReply();
-                member.ReceiveRoomMessage(message);
+                await Task.Delay(500, cancellationToken);
+            }
+
+            //收件人可能在排队期间离开了聊天室（角色被关闭），此时不能再投递，
+            //否则会在销毁流程中触发新的对话，导致关闭卡住
+            lock (Lock)
+            {
+                if (Members.Contains(member) == false)
+                    return;
+                currentTurnHolder = member;
+            }
+
+            member.MarkPendingReply();
+            member.ReceiveRoomMessage(message);
         }
         catch (OperationCanceledException) {}
     }
 
-    static IEnumerable<ChatRoomService> SortByRank(IEnumerable<ChatRoomService> members)
+    static ChatRoomService[] SortByRank(IEnumerable<ChatRoomService> members)
     {
         lock (Lock)
-            return members.OrderBy(m => m.ResponseOrder).ThenBy(m => Members.IndexOf(m)).ToArray();
+            return SortByRankUnlocked(members);
+    }
+
+    static ChatRoomService[] SortByRankUnlocked(IEnumerable<ChatRoomService> members)
+    {
+        return members.OrderBy(m => m.ResponseOrder).ThenBy(m => Members.IndexOf(m)).ToArray();
     }
 
     /// <summary>
@@ -183,6 +275,10 @@ public static class ChatRoomHub
         int maxRounds = speaker.MaxAITalkRounds;
         ChatRoomService[] others;
         bool isClosingRound;
+        bool useModerator;
+        bool skipAfterWrapUp;
+        ChatRoomService? provider;
+        CancellationToken moderatorToken = CancellationToken.None;
         lock (Lock)
         {
             others = Members.Where(m => m != speaker).ToArray();
@@ -210,30 +306,245 @@ public static class ChatRoomHub
                 return;
             }
             isClosingRound = aiTalkStreak == maxRounds;
+
+            AppendTranscriptUnlocked(speaker.MemberName, content);
+
+            provider = GetModeratorProviderUnlocked();
+            useModerator = Members.Count >= 2 && provider != null;
+            if (useModerator)
+                moderatorToken = RenewModeratorSessionUnlocked();
+            skipAfterWrapUp = wrapUpPending;
         }
 
-        string hint = isClosingRound
-            ? "(系统提示：本话题已持续很久，请就此自然收尾，收到本条后不要再回复)"
-            : "(想回应正常用<speak>说话即可，在场的人都听得到；与你无关或无话可说时保持沉默，不必每条都回)";
-
-        //成员发言同样按顺位排队送达（等发言者说完再交棒），但不因用户新发言而作废——说出口的话都应该被听到
-        int slot = 0;
-        foreach (ChatRoomService other in SortByRank(others))
+        if (useModerator == false)
         {
-            ScheduleDelivery(other, $"[聊天室] {speaker.MemberName} 说：{content}\n{hint}", other.ResponseDelaySeconds * slot, CancellationToken.None);
-            slot++;
+            string hint = isClosingRound
+                ? "(系统提示：本话题已持续很久，请就此自然收尾，收到本条后不要再回复)"
+                : "(想回应正常用<speak>说话即可，在场的人都听得到；与你无关或无话可说时保持沉默，不必每条都回)";
+
+            //成员发言同样按顺位排队送达（等发言者说完再交棒），但不因用户新发言而作废——说出口的话都应该被听到
+            int slot = 0;
+            foreach (ChatRoomService other in SortByRank(others))
+            {
+                ScheduleDelivery(other, $"[聊天室] {speaker.MemberName} 说：{content}\n{hint}", other.ResponseDelaySeconds * slot, CancellationToken.None);
+                slot++;
+            }
+            return;
         }
+
+        foreach (ChatRoomService other in others)
+            other.ReceiveRoomContext($"[聊天室] {speaker.MemberName} 说：{content}");
+
+        //收尾发言已经开口，内容旁听即可，不再决策，避免 wrap_up 之后 stay_silent 又顺位点下一位
+        if (skipAfterWrapUp)
+            return;
+
+        RunModeratorAndDeliver(speaker, others, provider!, isClosingRound, moderatorToken);
+    }
+
+    static ChatRoomService? GetModeratorProviderUnlocked()
+    {
+        return Members
+            .Where(m => m.ModeratorEnabled)
+            .OrderBy(m => m.ResponseOrder)
+            .ThenBy(m => Members.IndexOf(m))
+            .FirstOrDefault();
+    }
+
+    static CancellationToken RenewModeratorSessionUnlocked()
+    {
+        moderatorSession.Cancel();
+        moderatorSession = new CancellationTokenSource();
+        return moderatorSession.Token;
+    }
+
+    static void AppendTranscriptUnlocked(string speakerName, string content)
+    {
+        transcript.Add(new TranscriptEntry(DateTime.Now, speakerName, content));
+        while (transcript.Count > MaxTranscriptEntries)
+            transcript.RemoveAt(0);
+    }
+
+    static TranscriptEntry[] GetTranscriptWindowUnlocked(int window)
+    {
+        if (window <= 0 || transcript.Count == 0)
+            return [];
+        int start = Math.Max(0, transcript.Count - window);
+        int count = transcript.Count - start;
+        TranscriptEntry[] copy = new TranscriptEntry[count];
+        transcript.CopyTo(start, copy, 0, count);
+        return copy;
+    }
+
+    static async void RunModeratorAndDeliver(
+        ChatRoomService currentSpeaker,
+        ChatRoomService[] candidates,
+        ChatRoomService provider,
+        bool isClosingRound,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (candidates.Length == 0)
+                return;
+
+            TranscriptEntry[] window;
+            string[] candidateNames;
+            string guidance;
+            string userName;
+            float timeoutSeconds;
+            float leadSeconds;
+            lock (Lock)
+            {
+                window = GetTranscriptWindowUnlocked(provider.ModeratorTranscriptWindow);
+                candidateNames = candidates.Select(m => m.MemberName).ToArray();
+                guidance = provider.ModeratorGuidance;
+                userName = provider.Configuration.UserName;
+                timeoutSeconds = provider.ModeratorTimeoutSeconds;
+                leadSeconds = provider.ModeratorLeadSeconds;
+            }
+
+            using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            if (timeoutSeconds > 0)
+                timeoutSource.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+            ModeratorDecision? decision = await ChatRoomModerator.DecideAsync(
+                provider.ChatBot.LanguageModel,
+                guidance,
+                window,
+                candidateNames,
+                userName,
+                timeoutSource.Token);
+
+            if (cancellationToken.IsCancellationRequested)
+                return;
+
+            if (decision == null)
+            {
+                FallbackToRankDelivery(candidates, isClosingRound, cancellationToken);
+                return;
+            }
+
+            if (decision.Action == ChatRoomModerator.ActionStaySilent)
+            {
+                ReleaseAudioTurn(currentSpeaker);
+                //收尾轮仍需要有人开口收束；静场的话回退到顺位提示
+                if (isClosingRound)
+                    FallbackToRankDelivery(candidates, isClosingRound: true, cancellationToken);
+                return;
+            }
+
+            ChatRoomService? next = FindMemberByName(decision.NextSpeaker, candidates);
+            if (next == null)
+            {
+                FallbackToRankDelivery(candidates, isClosingRound, cancellationToken);
+                return;
+            }
+
+            await WaitForSpeechLeadAsync(currentSpeaker, leadSeconds, cancellationToken);
+
+            lock (Lock)
+            {
+                if (Members.Contains(next) == false)
+                    return;
+                currentTurnHolder = next;
+                if (decision.Action == ChatRoomModerator.ActionWrapUp)
+                {
+                    lastSpeaker = next;
+                    aiTalkStreak = next.MaxAITalkRounds;
+                    wrapUpPending = true;
+                }
+            }
+
+            next.MarkPendingReply();
+            next.ReceiveRoomMessage(BuildModeratorPoke(decision, isClosingRound));
+        }
+        catch (OperationCanceledException) {}
+        catch (Exception e)
+        {
+            AlifeLog.LogWarning(e);
+            try
+            {
+                if (cancellationToken.IsCancellationRequested == false)
+                    FallbackToRankDelivery(candidates, isClosingRound, cancellationToken);
+            }
+            catch (Exception fallbackError)
+            {
+                AlifeLog.LogWarning(fallbackError);
+            }
+        }
+    }
+
+    static async Task WaitForSpeechLeadAsync(
+        ChatRoomService speaker,
+        float leadSeconds,
+        CancellationToken cancellationToken)
+    {
+        DateTime waitStart = DateTime.Now;
+        while ((DateTime.Now - waitStart).TotalSeconds < MaxTurnWaitSeconds)
+        {
+            if (speaker.IsBusyReplying == false)
+                return;
+            double? remaining = speaker.RemainingSpeechSeconds;
+            if (remaining != null && remaining.Value <= leadSeconds)
+                return;
+            await Task.Delay(200, cancellationToken);
+        }
+    }
+
+    static void FallbackToRankDelivery(ChatRoomService[] candidates, bool isClosingRound, CancellationToken cancellationToken)
+    {
+        ChatRoomService? next = SortByRank(candidates).FirstOrDefault();
+        if (next == null)
+            return;
+
+        string message = isClosingRound
+            ? "[聊天室] 轮到你回应上面的发言了（系统提示：本话题已持续很久，请就此自然收尾，收到本条后不要再回复）"
+            : "[聊天室] 轮到你回应上面的发言了（想说就说，无话保持沉默）";
+        ScheduleDelivery(next, message, 0, cancellationToken);
+    }
+
+    static ChatRoomService? FindMemberByName(string? name, ChatRoomService[] candidates)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+        string trimmed = name.Trim();
+        return candidates.FirstOrDefault(m => m.MemberName.Equals(trimmed, StringComparison.OrdinalIgnoreCase));
+    }
+
+    static string BuildModeratorPoke(ModeratorDecision decision, bool isClosingRound)
+    {
+        string hint = string.IsNullOrWhiteSpace(decision.Hint) ? "" : decision.Hint.Trim();
+
+        if (decision.Action == ChatRoomModerator.ActionWrapUp)
+        {
+            return $"[聊天室] 主持人：请把当前话题给管理员一句实质性的收束。{hint}\n" +
+                   "(只说结论或回答，不要宣布等待、不要说自己会安静待着，说完后不要再回复)";
+        }
+
+        string body = hint.Length == 0
+            ? "[聊天室] 主持人：现在轮到你发言了。"
+            : $"[聊天室] 主持人：现在轮到你发言了。{hint}";
+        string closing = isClosingRound
+            ? "(给管理员一句实质性的收束即可；不要宣布等待或说自己会安静待着，说完后不要再回复)"
+            : "(直接用<speak>说话即可。若无实质内容可说，不要开口，也不要解释为什么不说)";
+        return $"{body}\n{closing}";
     }
 
     static readonly object Lock = new();
     static readonly List<ChatRoomService> Members = new();
+    static readonly List<TranscriptEntry> transcript = new();
     static int aiTalkStreak;
     static bool streakNoticeSent;
     static ChatRoomService? lastSpeaker;
+    static ChatRoomService? currentTurnHolder;
+    static bool wrapUpPending;
 
     const double UserContentDedupeSeconds = 10;
     const double MaxTurnWaitSeconds = 60;
+    const int MaxTranscriptEntries = 40;
     static string? lastUserContent;
     static DateTime lastUserContentTime;
     static CancellationTokenSource pendingDeliveries = new();
+    static CancellationTokenSource moderatorSession = new();
 }
