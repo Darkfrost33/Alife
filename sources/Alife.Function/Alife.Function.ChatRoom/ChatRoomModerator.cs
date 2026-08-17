@@ -49,7 +49,11 @@ public static class ChatRoomModerator
 
             if (exception != null)
             {
-                AlifeLog.LogWarning(exception);
+                //取消是正常流程（被新发言取代或超时），不打完整堆栈；语言模型内部会把取消当普通异常吞掉再回调
+                if (exception is OperationCanceledException || cancellationToken.IsCancellationRequested)
+                    AlifeLog.LogInformation("主持人决策已取消（被新发言取代或超时）。");
+                else
+                    AlifeLog.LogWarning(exception);
                 return null;
             }
 
@@ -57,7 +61,7 @@ public static class ChatRoomModerator
         }
         catch (OperationCanceledException)
         {
-            AlifeLog.LogWarning("主持人决策已取消或超时。");
+            AlifeLog.LogInformation("主持人决策已取消（被新发言取代或超时）。");
             return null;
         }
         catch (Exception e)

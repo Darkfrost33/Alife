@@ -388,6 +388,11 @@ public static class ChatRoomHub
             if (candidates.Length == 0)
                 return;
 
+            //短暂防抖：同一条回复里的多个<speak>段会连续触发决策，前几次注定被下一次取代。
+            //真正调用LLM前先等一小段，让被取代的会话死在这次廉价等待里，而不是HTTP请求半路，
+            //既省下白发的请求，也避免日志里出现连接被掐断的取消异常。
+            await Task.Delay(DecisionDebounceMilliseconds, cancellationToken);
+
             TranscriptEntry[] window;
             string[] candidateNames;
             string guidance;
@@ -543,6 +548,7 @@ public static class ChatRoomHub
     const double UserContentDedupeSeconds = 10;
     const double MaxTurnWaitSeconds = 60;
     const int MaxTranscriptEntries = 40;
+    const int DecisionDebounceMilliseconds = 1000;
     static string? lastUserContent;
     static DateTime lastUserContentTime;
     static CancellationTokenSource pendingDeliveries = new();
