@@ -28,26 +28,14 @@ public class ChatRoomConfig
     [Description("用户离场期间，成员间最多连续对话的条数，超过后自动静音话题，防止无限循环")]
     public int MaxAITalkRounds { get; set; } = 8;
 
+    [Description("成员间连续对话的接话概率衰减系数（0~1）：第一轮必有人接话，之后每轮概率乘以该系数，让话题自然消退而不是聊满轮数才硬切断。1为不衰减；发言中点到名字的成员不受影响，必定收到回应提示；没被提示的成员仍会听到内容（静默写入上下文）")]
+    public float AITalkDecayFactor { get; set; } = 0.7f;
+
     [Description("响应顺位：数字越小越先响应用户发言，相同时按激活顺序排。语音发言只有顺位最高的带麦角色会立即回应")]
     public int ResponseOrder { get; set; } = 0;
 
     [Description("响应顺位间的延迟秒数：用户发言会按顺位依次延迟转播给各成员，让前一位先说完")]
     public float ResponseDelaySeconds { get; set; } = 6f;
-
-    [Description("是否启用主持人：由 LLM 集中决定每轮谁发言、引导话题，避免成员互相车轱辘话。需要至少两名成员在线才生效")]
-    public bool ModeratorEnabled { get; set; } = false;
-
-    [Description("主持人的引导风格或话题目标，会写进主持人的决策提示词（可留空）")]
-    public string ModeratorGuidance { get; set; } = "";
-
-    [Description("主持人决策时能看到的最近对话条数")]
-    public int ModeratorTranscriptWindow { get; set; } = 12;
-
-    [Description("上一位语音剩余多少秒时开始向下一位交棒（让LLM生成与语音尾巴重叠）")]
-    public float ModeratorLeadSeconds { get; set; } = 2.5f;
-
-    [Description("主持人LLM决策的超时秒数，超时后回退为固定顺位轮流")]
-    public float ModeratorTimeoutSeconds { get; set; } = 10f;
 }
 
 [Module("桌宠聊天室", "让同时激活的多个角色进入同一个聊天室：用户的发言全员可见，角色用<speak>说的话其他角色也能听到，并自带防无限对话机制。",
@@ -64,13 +52,9 @@ public class ChatRoomService(
 
     public string MemberName => Character.Name;
     public int MaxAITalkRounds => Configuration.MaxAITalkRounds;
+    public float AITalkDecayFactor => Configuration.AITalkDecayFactor;
     public int ResponseOrder => Configuration.ResponseOrder;
     public float ResponseDelaySeconds => Configuration.ResponseDelaySeconds;
-    public bool ModeratorEnabled => Configuration.ModeratorEnabled;
-    public string ModeratorGuidance => Configuration.ModeratorGuidance;
-    public int ModeratorTranscriptWindow => Configuration.ModeratorTranscriptWindow;
-    public float ModeratorLeadSeconds => Configuration.ModeratorLeadSeconds;
-    public float ModeratorTimeoutSeconds => Configuration.ModeratorTimeoutSeconds;
 
     /// <summary>本角色是否启用了语音识别类模块（即能直接听到用户的麦克风发言）。</summary>
     public bool CanHearVoice => ChatActivity.Container.Instances
@@ -234,16 +218,13 @@ public class ChatRoomService(
                 3. 如果你没有说话能力（无<speak>标签），可用 <say> 标签以文字形式公开发言；普通文本输出只有管理员能看到。
                 4. 这是多人场合：与你无关的对话保持沉默即可，不必每条都回复，避免刷屏；发言尽量简短自然。
                 5. 系统为成员安排了响应顺位，管理员的发言会按顺位依次通知大家：轮到你时才会收到消息或提示，此时前面的成员可能已经回答过，注意衔接、不要重复别人说过的内容。
-                6. 系统会限制成员间连续对话的轮数，收到收尾提示后请自然结束话题，等管理员发言后再继续。
-                7. 用 <members/> 可查看当前在线成员。
+                6. 系统会限制成员间的连续对话：话题聊得越久，你的发言越可能不再被提示回应，最终自动静音。收到收尾提示后请自然结束话题，等管理员发言后再继续。
+                7. 回应必须带来新内容：不要重复或换种说法复述别人（或你自己）刚说过的话，系统检测到复读会直接不转达；没有新东西可说就保持沉默。
+                8. 你向管理员提了问题之后，停下来等管理员回答：不要连续追问，也不要在管理员还没回话时另起新话题。
+                9. 别的成员讲的经历、故事、观点属于他们自己，不要把别人的第一人称经历当成你自己的往下讲。管理员追问某个话题（如"然后呢"）通常是在问最初讲这件事的人，如果那不是你，简短带过或补充旁观视角即可，不要抢着替别人续写。
+                10. 语音发言经过语音转文字，个别词可能识别有误：发现不通顺或前后矛盾时按上下文合理理解，不要把可疑的词当成确凿事实向别人转述。
+                11. 用 <members/> 可查看当前在线成员。
                 """;
-        if (Configuration.ModeratorEnabled)
-        {
-            prompt += """
-
-                8. 本聊天室由主持人控场：收到"[聊天室] 主持人"的发言提示才轮到你说话；其余时间你会旁听到别人的发言，保持安静即可，不要主动插话。
-                """;
-        }
         interactor.Prompt(prompt);
         return Task.CompletedTask;
     }
